@@ -1,0 +1,50 @@
+{% extends "user/base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h3 class="mb-4">Sales Rep Dashboard</h3>
+
+  <form method="GET" class="form-inline mb-4">
+    <label for="date_range" class="mr-2">Filter by:</label>
+    <select class="form-control" name="date_range" id="date_range" onchange="this.form.submit()">
+      <option value="">Select Range</option>
+      <option value="1" {% if request.args.get('date_range') == '1' %}selected{% endif %}>Last 1 Day</option>
+      <option value="3" {% if request.args.get('date_range') == '3' %}selected{% endif %}>Last 3 Days</option>
+      <option value="7" {% if request.args.get('date_range') == '7' %}selected{% endif %}>Last 7 Days</option>
+      <option value="30" {% if request.args.get('date_range') == '30' %}selected{% endif %}>Last Month</option>
+    </select>
+  </form>
+
+  <div class="row">
+    <div class="col-md-4">
+      <div class="card text-white bg-primary mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Total Leads </h5>
+          <p class="card-text display-4">{{ total_leads }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card text-white bg-success mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Converted Leads </h5>
+          <p class="card-text display-4">{{ converted_leads }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <div class="card text-white bg-secondary mb-3">
+        <div class="card-body">
+          <h5 class="card-title">Closed Leads </h5>
+          <p class="card-text display-4">{{ closed_leads }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Future section: chart or detailed list can be added here -->
+</div>
+{% endblock %}

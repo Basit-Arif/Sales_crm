@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <h2>Add New User</h2>
+    <form method="POST">
+  <label>Username:</label><br>
+  <input type="text" name="username" required><br><br>
+
+  <label>Password:</label><br>
+  <input type="password" name="password" required><br><br>
+
+  <label>Is Admin?</label>
+  <input type="checkbox" name="is_admin"><br><br>
+
+  <label>Full Name (for SalesRep):</label><br>
+  <input type="text" name="full_name"><br><br>
+
+  <label>Phone Number:</label><br>
+  <input type="text" name="phone_number"><br><br>
+
+  <label>Company ID:</label><br>
+  <select name="company_id" required>
+    {% for company in companies %}
+      <option value="{{ company.id }}">{{ company.name }}</option>
+    {% endfor %}
+  </select><br><br>
+
+  <button type="submit">Create User</button>
+</form>
+    
+</body>
+</html>
