@@ -1,7 +1,7 @@
 from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session
 from app.routes.auth import login_required
 from app.database import SessionLocal
-from app.models.models import Lead,LeadMessage,SalesRep,Notification
+from app.models.models import Lead,LeadMessage,SalesRep,Notification,Meeting
 from app.services.massenger_services import send_message
 from sqlalchemy.orm import joinedload
 from datetime import datetime,timedelta
@@ -24,7 +24,7 @@ def index():
         db.close()
         return redirect(url_for("user.dashboard"))
 
-    # Get range from query param
+    # Lead filtering logic
     days_range = request.args.get("date_range", default=0, type=int)
     filter_date = datetime.utcnow().date() - timedelta(days=days_range) if days_range else datetime.utcnow().date()
 
@@ -36,13 +36,41 @@ def index():
     total_leads = len(today_leads)
     converted_leads = sum(1 for lead in today_leads if lead.status == "converted")
     closed_leads = sum(1 for lead in today_leads if lead.status == "closed")
-    print("total_leads",total_leads)
+
+    # ✅ New: Today's Meetings
+    today = datetime.utcnow().date()
+    tomorrow = today + timedelta(days=1)
+
+    from sqlalchemy.orm import joinedload
+
+    today_meetings = db.query(Meeting).options(
+        joinedload(Meeting.lead)
+    ).filter(
+        Meeting.sales_rep_id == sales_rep.id,
+        Meeting.meeting_time >= today,
+        Meeting.meeting_time < tomorrow
+    ).order_by(Meeting.meeting_time.asc()).all()
+
+    pending_feedback = db.query(Meeting).options(
+        joinedload(Meeting.lead)
+    ).filter(
+        Meeting.sales_rep_id == sales_rep.id,
+        Meeting.status == "confirmed",
+        Meeting.notes == None,
+        Meeting.meeting_time < datetime.utcnow()
+    ).order_by(Meeting.meeting_time.desc()).all()
+
+# Force hydration before session closes
+    pending_feedback = [m for m in pending_feedback]
     db.close()
     return render_template(
         "user/user_dashboard.html",
         total_leads=total_leads,
         converted_leads=converted_leads,
-        closed_leads=closed_leads
+        closed_leads=closed_leads,
+        today_meetings=today_meetings,
+        pending_feedback=pending_feedback
+
     )
 
 @user_bp.route('/dashboard')

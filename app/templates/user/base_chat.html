@@ -4,6 +4,14 @@
 
 {% block style %}
   <style>
+    @keyframes flashNewMessage {
+    0% { background-color: #d1ecf1; }
+    100% { background-color: inherit; }
+  }
+
+  .msg-new-flash {
+  animation: flashNewMessage 1.5s ease-out;
+}
    
   </style>
 {% endblock %}
@@ -16,7 +24,7 @@
         <h1>hello</h1>
         {% endblock %}
       </nav>
-      <main class="col-md-9 d-flex flex-column bg-dark" >
+      <main class="col-md-9 d-flex flex-column " >
         
         <div class="border-top p-2 bg-light chat-footer">
           {% block message_input %}{% endblock %}
@@ -40,7 +48,7 @@
   socket.on("new_message", function(data) {
   const currentLeadId = "{{ selected_lead['id'] if selected_lead else '' }}";
   if (data.lead_id == currentLeadId) {
-    const chatBox = document.querySelector("#chat-message-container");
+    const chatBox = document.querySelector("#chat-box");
     const msgRow = document.createElement("div");
     msgRow.className = "msg-row " + (data.sender === "rep" ? "msg-rep" : "msg-user");
 
@@ -65,6 +73,7 @@
     </div>
   `;
   chatBox.appendChild(msgRow);
+  msgRow.classList.add("msg-new-flash");
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 });

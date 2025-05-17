@@ -1,0 +1,226 @@
+{% extends "user/base.html" %}
+{% block content %}
+<div class="container mt-5">
+    <h2 class="mb-4">Meeting Dashboard</h2>
+    <!-- Add New Meeting Button -->
+    <div class="mb-3 text-right">
+        <button class="btn btn-primary" data-toggle="modal" data-target="#newMeetingModal">
+            + Add New Meeting
+        </button>
+    </div>
+
+    <!-- Meeting Filters -->
+    <ul class="nav nav-pills mb-3">
+      <li class="nav-item">
+        <a id="today-tab" class="nav-link" href="#" onclick="filterMeetings('today')">Today</a>
+      </li>
+      <li class="nav-item">
+        <a id="week-tab" class="nav-link" href="#" onclick="filterMeetings('week')">This Week</a>
+      </li>
+      <li class="nav-item">
+        <a id="all-tab" class="nav-link active" href="#" onclick="filterMeetings('all')">All</a>
+      </li>
+    </ul>
+
+    <!-- New Meeting Modal -->
+    <div class="modal fade" id="newMeetingModal" tabindex="-1" role="dialog" aria-labelledby="newMeetingModalLabel" aria-hidden="true">
+      <div class="modal-dialog" role="document">
+        <form method="POST" action="{{ url_for('meeting.create') }}">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="newMeetingModalLabel">New Meeting</h5>
+              <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="lead_id">Lead</label>
+                    <select name="lead_id" class="form-control" required>
+                        {% for lead in leads %}
+                        <option value="{{ lead.id }}">{{ lead.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="meeting_time">Meeting Time</label>
+                    <input type="datetime-local" name="meeting_time" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="original_message">Original Message</label>
+                    <textarea name="original_message" class="form-control" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+              <button type="submit" class="btn btn-success">Save Meeting</button>
+              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <table class="table table-bordered table-hover">
+        <thead class="thead-dark">
+            <tr>
+                <th>Meeting ID ↓</th>
+                <th>Lead Name</th>
+                
+                <th>Date</th>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Original Message</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for meeting in meetings|sort(attribute='id', reverse=True) if meeting.sales_rep.user_id == current_user_id %}
+            <tr style="background-color: {% if loop.index0 % 2 == 0 %}#e6f7ff{% else %}#ffffff{% endif %};">
+                <td>{{ meeting.id }}</td>
+                <td>{{ meeting.lead.name }}</td>
+                
+                <td>{{ meeting.meeting_time.strftime('%Y-%m-%d') }}</td>
+                <td>{{ meeting.meeting_time.strftime('%I:%M %p') }}</td>
+                <td>
+                  <span class="badge 
+                    {% if meeting.status == 'confirmed' %}badge-success
+                    {% elif meeting.status == 'rescheduled' %}badge-warning
+                    {% elif meeting.status == 'cancelled' %}badge-danger
+                    {% elif meeting.status == 'invalid' %}badge-dark
+                    {% else %}badge-secondary{% endif %}">
+                    {{ meeting.status }}
+                  </span>
+                </td>
+                <td>{{ meeting.original_message }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('meeting.update_status', meeting_id=meeting.id) }}"> 
+                        <select name="status" class="form-control form-control-sm d-inline w-auto" onchange="this.form.submit()">
+                            <option disabled selected>Action</option>
+                            <option value="confirmed">Confirm</option>
+                            <option value="rescheduled">Reschedule</option>
+                            <option value="cancelled">Cancel</option>
+                            <option value="invalid">Not a Meeting</option>
+                        </select>
+                        <input type="datetime-local" name="reschedule_time" class="form-control form-control-sm mt-1 d-none" placeholder="New time">
+                        <input type="text" name="cancel_note" class="form-control form-control-sm mt-1 d-none" placeholder="Reason for cancellation" required>
+                    </form> 
+                    <button class="btn btn-sm btn-warning mt-2" data-toggle="modal" data-target="#editModal{{ meeting.id }}">
+                        Edit
+                    </button>
+                    <a href="{{ url_for('user.view_chat', lead_id=meeting.lead_id) }}" class="btn btn-sm btn-info mt-2">
+                        View Chat
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" class="text-center">No meetings found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% for meeting in meetings|sort(attribute='meeting_time', reverse=True) if meeting.sales_rep.user_id == current_user_id %}
+<div class="modal fade" id="editModal{{ meeting.id }}" tabindex="-1" role="dialog" aria-labelledby="editModalLabel{{ meeting.id }}" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <form method="POST" action="{{ url_for('meeting.edit', meeting_id=meeting.id) }}">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editModalLabel{{ meeting.id }}">Edit Meeting</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="meeting_time">Meeting Time</label>
+            <div class="d-flex">
+              <input type="date" name="meeting_date" class="form-control mr-1" required value="{{ meeting.meeting_time.strftime('%Y-%m-%d') }}">
+              <input type="time" name="meeting_time" class="form-control mr-1" required value="{{ meeting.meeting_time.strftime('%H:%M') }}">
+              <select name="ampm" class="form-control" required>
+                <option value="AM" {% if meeting.meeting_time.strftime('%p') == 'AM' %}selected{% endif %}>AM</option>
+                <option value="PM" {% if meeting.meeting_time.strftime('%p') == 'PM' %}selected{% endif %}>PM</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="original_message">Original Message</label>
+            <textarea name="original_message" class="form-control" required>{{ meeting.original_message }}</textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-success">Update</button>
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+<script>
+function filterMeetings(type) {
+  const rows = document.querySelectorAll("table tbody tr");
+  const today = new Date().toISOString().slice(0, 10);
+  const weekEnd = new Date();
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+
+  rows.forEach(row => {
+    const dateCell = row.querySelector("td:nth-child(3)");
+    if (!dateCell) return;
+
+    const date = dateCell.textContent.trim();
+    let show = true;
+
+    if (type === 'today' && date !== today) show = false;
+    if (type === 'week' && (date < today || date > weekEndStr)) show = false;
+
+    row.style.display = type === 'all' ? '' : (show ? '' : 'none');
+  });
+
+  document.querySelectorAll(".nav-link").forEach(link => link.classList.remove("active"));
+  if (type !== 'all') {
+    document.getElementById(type + "-tab").classList.add("active");
+  } else {
+    document.getElementById("all-tab").classList.add("active");
+  }
+}
+
+document.querySelectorAll("select[name='status']").forEach(select => {
+  select.addEventListener("change", function() {
+    const container = this.closest("td");
+    const rescheduleInput = container.querySelector("input[name='reschedule_time']");
+    const cancelInput = container.querySelector("input[name='cancel_note']");
+
+    if (this.value === "rescheduled" && rescheduleInput) {
+      rescheduleInput.classList.remove("d-none");
+      rescheduleInput.focus();
+    } else if (rescheduleInput) {
+      rescheduleInput.classList.add("d-none");
+    }
+
+    if (this.value === "cancelled" && cancelInput) {
+      cancelInput.classList.remove("d-none");
+      cancelInput.focus();
+
+      // Disable form submission unless cancel note is filled
+      const form = this.closest("form");
+      if (!form.dataset.listenerAttached) {
+        form.addEventListener("submit", function(e) {
+          if (!cancelInput.value.trim()) {
+            e.preventDefault();
+            cancelInput.classList.add("is-invalid");
+            cancelInput.focus();
+          }
+        });
+        form.dataset.listenerAttached = "true";
+      }
+    } else if (cancelInput) {
+      cancelInput.classList.add("d-none");
+      cancelInput.classList.remove("is-invalid");
+    }
+  });
+});
+</script>
+{% endblock %}

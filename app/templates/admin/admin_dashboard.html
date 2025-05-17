@@ -1,12 +1,171 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
-<body>
-    hello
-    
-</body>
-</html>
+{% extends "admin/base_admin.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <h3 class="mb-4">Dashboard Overview</h3>
+
+  <!-- KPI Cards -->
+  <div class="row g-4 mb-5" id="kpi-section">
+    <div class="col-md-3">
+      <div class="card text-white bg-primary shadow-sm">
+        <div class="card-body">
+          <h6>Total Leads</h6>
+          <h3 id="total-leads">...</h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-success shadow-sm">
+        <div class="card-body">
+          <h6>Sales Reps</h6>
+          <h3 id="total-reps">...</h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-warning shadow-sm">
+        <div class="card-body">
+          <h6>Meetings Today</h6>
+          <h3 id="meetings-today">...</h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-white bg-danger shadow-sm">
+        <div class="card-body">
+          <h6>Pending Follow-ups</h6>
+          <h3 id="overdue-followups">...</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Weekly Activity Chart -->
+  <div class="card">
+    <div class="card-header">Weekly Activity</div>
+    <div class="card-body">
+      <canvas id="activityChart" height="100"></canvas>
+    </div>
+  </div>
+
+  <!-- Top Sales Reps This Week -->
+  
+
+  <!-- Upcoming Meetings -->
+  <div class="card mt-4">
+    <div class="card-header">Upcoming Meetings</div>
+    <div class="card-body p-0">
+      <ul class="list-group list-group-flush">
+        {% for meeting in upcoming_meetings %}
+        <li class="list-group-item d-flex justify-content-between">
+          <div>
+            <strong>{{ meeting.lead_name }}</strong><br>
+            <small>Rep: {{ meeting.rep_name }}</small>
+          </div>
+          <span class="badge bg-info">{{ meeting.meeting_time.strftime('%b %d, %I:%M %p') }}</span>
+        </li>
+        {% else %}
+        <li class="list-group-item text-muted text-center">No upcoming meetings.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="card mt-4">
+    <div class="card-header">Last Active Sales Reps</div>
+    <div class="card-body p-0">
+      <table class="table mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Rep</th>
+            <th>Last Activity</th>
+            <th>Client </th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rep in last_active_reps %}
+          <tr>
+            <td>{{ rep.name }}</td>
+            <td>{{ rep.last_active.strftime('%b %d, %I:%M %p') }}</td>
+            <td>{{ rep.client }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="2" class="text-muted text-center">No recent activity.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const ctx = document.getElementById('activityChart').getContext('2d');
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: {{ labels|tojson }},
+      datasets: [
+        {
+          label: 'Leads',
+          data: {{ leads_data|tojson }},
+          borderColor: 'blue',
+          fill: false
+        },
+        {
+          label: 'Messages',
+          data: {{ messages_data|tojson }},
+          borderColor: 'green',
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true
+        }
+      }
+    }
+});
+</script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const url = new URL(window.location.href);
+    const company = url.searchParams.get("company") || "all";
+
+    fetch("http://localhost:8000/process", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        lead_message: "Let's meet tomorrow at 2pm PST",
+        lead_id: 101
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      console.log("Response:", data);
+    })
+    .catch(err => {
+      console.error("Error:", err);
+    });
+
+    fetch(`/admin/api/kpi_summary?company=${company}`)
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("total-leads").textContent = data.total_leads;
+        document.getElementById("total-reps").textContent = data.total_reps;
+        document.getElementById("meetings-today").textContent = data.meetings_today;
+        document.getElementById("overdue-followups").textContent = data.overdue_followups;
+      })
+      .catch(err => {
+        console.error("Failed to load KPI summary:", err);
+      });
+  });
+</script>
+{% endblock %}

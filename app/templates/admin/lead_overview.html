@@ -1,0 +1,54 @@
+{% extends 'admin/base_admin.html' %}
+{% block title %}Lead Overview{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <h3 class="mb-4">Leads Overview</h3>
+
+  <table class="table table-bordered table-hover align-middle">
+    <thead class="table-light">
+        <tr>
+            <th>Name</th>
+            <th>Platform</th>
+            <th>Created</th>
+            <th>Status</th>
+            <th>Last Active</th>
+            <th>Comment</th>
+            <th>Actions</th>
+          </tr>
+      
+    </thead>
+    <tbody>
+      {% for lead in leads %}
+      <tr>
+        <td>
+            {{ lead.name }}
+            {% if selected_company == 'all' and lead.sales_rep and lead.sales_rep.company %}
+              <br><small class="text-muted">({{ lead.sales_rep.company.name }})</small>
+            {% endif %}
+        </td>
+        <td><span class="badge bg-secondary text-uppercase">{{ lead.platform }}</span></td>
+        <td>{{ lead.assigned_at.strftime('%b %d, %Y') if lead.assigned_at else 'N/A' }}</td>
+        <td>
+          <span class="badge 
+            {% if lead.status == 'closed' %}bg-warning
+            {% elif lead.status == 'active' %}bg-primary
+            {% elif lead.status == 'converted' %}bg-success
+            {% else %}bg-info{% endif %}
+          ">{{ lead.status }}</span>
+        </td>
+        <td>{{ lead.last_active_at.strftime('%b %d, %Y') if lead.last_active_at else 'N/A' }}</td>
+        <td>{{ lead.comment or 'Awaiting summary...' }}</td>
+        <td>
+          <a href="{{ url_for('admin.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="text-muted text-center">No leads found.</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

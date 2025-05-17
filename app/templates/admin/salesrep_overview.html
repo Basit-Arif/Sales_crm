@@ -1,0 +1,70 @@
+{% extends 'admin/base_admin.html' %}
+{% block title %}Sales Rep Overview{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <h3 class="mb-4">Sales Rep Overview</h3>
+
+  <form method="get" class="row g-3 mb-3 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label">Status</label>
+      <select class="form-select" name="status">
+        <option value="">All</option>
+        <option value="active" {% if request.args.get('status') == 'active' %}selected{% endif %}>Active</option>
+        <option value="idle" {% if request.args.get('status') == 'idle' %}selected{% endif %}>Idle</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">From Date</label>
+      <input type="date" name="from_date" class="form-control" value="{{ request.args.get('from_date') }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">To Date</label>
+      <input type="date" name="to_date" class="form-control" value="{{ request.args.get('to_date') }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Search Rep</label>
+      <input type="text" name="q" class="form-control" placeholder="e.g. Ali Raza" value="{{ request.args.get('q') }}">
+    </div>
+    <div class="col-12">
+      <button class="btn btn-sm btn-primary">Apply Filters</button>
+    </div>
+  </form>
+
+  <table class="table table-hover table-bordered align-middle">
+    <thead class="table-light">
+      <tr>
+        <th>Rep</th>
+        <th>Company</th>
+        <th>Total Leads</th>
+        <th>Converted Lead</th>
+        <th>Meetings</th>
+        <th>Last Activity</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rep in reps %}
+      <tr>
+        <td>{{ rep.name }}</td>
+        <td>{{ rep.company_name }}</td>
+        <td>{{ rep.total_leads }}</td>
+        <td>{{ rep.converted_leads_query }}</td>
+        <td>
+          {{ rep.meetings }}
+          <small class="text-muted d-block" title="Only confirmed meetings are counted">(Confirmed Only)</small>
+        </td>
+        <td>{{ rep.last_active.strftime('%b %d, %I:%M %p') if rep.last_active else 'N/A' }}</td>
+        <td>
+          <span class="badge {% if rep.status == 'Active' %}bg-success{% else %}bg-warning{% endif %}">
+            {{ rep.status }}
+          </span>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="text-muted text-center">No reps found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

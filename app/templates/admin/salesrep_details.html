@@ -1,0 +1,83 @@
+{% extends 'admin/base_admin.html' %}
+{% block title %}Sales Rep Profile{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h3 class="mb-3">Sales Rep: {{ rep.name }}</h3>
+  <p><strong>Company:</strong> {{ rep.company.name if rep.company else 'N/A' }}</p>
+  <p><strong>Joined:</strong> {{ rep.joined_at.strftime('%b %Y') }}</p>
+
+  <!-- KPI Summary -->
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card text-bg-primary shadow-sm">
+        <div class="card-body">
+          <h6>Total Leads</h6>
+          <h4>{{ kpi.total_leads }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-bg-info shadow-sm">
+        <div class="card-body">
+          <h6>Qualified Leads</h6>
+          <h4>{{ kpi.qualified }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-bg-success shadow-sm">
+        <div class="card-body">
+          <h6>Confirmed Meetings</h6>
+          <h4>{{ kpi.meetings }}</h4>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-bg-warning shadow-sm">
+        <div class="card-body">
+          <h6>Last Message</h6>
+          <h4>{{ kpi.last_message }}</h4>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Latest Assigned Leads -->
+  <h5 class="mt-4 mb-2">Latest Assigned Leads</h5>
+  <ul class="list-group mb-4">
+    {% for lead in recent_leads %}
+    <li class="list-group-item">
+      <strong>{{ lead.name }}</strong> — {{ lead.comment or "No summary available." }}
+    </li>
+    {% else %}
+    <li class="list-group-item text-muted">No recent leads found.</li>
+    {% endfor %}
+  </ul>
+
+  <!-- Confirmed Meetings Table -->
+  <h5 class="mb-2">Confirmed Meetings</h5>
+  <table class="table table-bordered table-sm">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Lead</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for meeting in confirmed_meetings %}
+      <tr>
+        <td>{{ meeting.meeting_time.strftime('%b %d') }}</td>
+        <td>{{ meeting.lead_name }}</td>
+        <td>{{ meeting.meeting_time.strftime('%I:%M %p') }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="text-muted text-center">No confirmed meetings.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+
+</div>
+{% endblock %}

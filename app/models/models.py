@@ -99,3 +99,38 @@ class Notification(Base):
     lead_id = Column(Integer, ForeignKey('leads.id'))
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Meeting(Base):
+    __tablename__ = 'meetings'
+
+    id = Column(Integer, primary_key=True)
+    sales_rep_id = Column(Integer, ForeignKey('sales_reps.id'), nullable=False)
+    lead_id = Column(Integer, ForeignKey('leads.id'), nullable=False)
+
+    meeting_time = Column(DateTime, nullable=False)  # Converted to rep’s timezone
+    original_message = Column(String(100), nullable=False)  # Full message that triggered the meeting detection
+    detected_time_string = Column(String(100))       # Extracted time phrase like "5pm"
+    status = Column(String(20), default="pending")   # pending / confirmed / cancelled / rescheduled
+    notes = Column(String(200))                             # Optional field for rep’s update post meeting
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Optional relationships
+    sales_rep = relationship("SalesRep", backref="meetings")
+    lead = relationship("Lead", backref="meetings")
+
+
+class LeadComment(Base):
+    __tablename__ = "lead_comments"
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    content = Column(String(300), nullable=False)  # GPT summary
+    summary_date = Column(DateTime, nullable=False)  # E.g., 2024-08-27
+    generated_by = Column(String(20), default="gpt")  # or "gpt","user","admin"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lead = relationship("Lead", backref="comments")
+
+
+

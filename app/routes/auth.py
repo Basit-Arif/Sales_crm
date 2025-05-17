@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from functools import wraps
 from werkzeug.security import check_password_hash
 from app.database import SessionLocal
-from app.models.models import User
+from app.models.models import User, SalesRep
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -17,6 +17,8 @@ def login():
 
         if user and check_password_hash(user.password, password):
             session["user_id"] = user.id
+            sales_rep = db.query(SalesRep).filter_by(user_id=session["user_id"]).first()
+            session["sales_rep_id"] = sales_rep.id if sales_rep else None
             session["is_admin"] = user.is_admin
             flash("✅ Login successful", "success")
             return redirect(url_for("admin.index") if user.is_admin else url_for("user.index"))

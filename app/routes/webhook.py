@@ -1,5 +1,4 @@
-
-from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash
+from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session
 from app.models.models import Lead,SalesRep,Company,LeadMessage, Notification
 import os
 from app.services.massenger_services import get_user_name
@@ -8,6 +7,7 @@ from dotenv import load_dotenv
 from app.database import SessionLocal
 from datetime import datetime
 from app import socketio
+from app.services.task import detect_meeting_intent_task,detect_meeting_intent
 
 # Load environment variables
 load_dotenv()
@@ -119,6 +119,7 @@ def handle_webhook():
 def handle_messenger_event(event, page_id, lead_platform, content, message_type):
     print(f"📥 Incoming message type: {message_type}")
     sender_id = event["sender"]["id"]
+    # print(f"📩 Messenger: {session["sales_rep_id"]}")
 
     user_name = get_user_name(sender_id)
     if not user_name:
@@ -161,7 +162,10 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
         )
         db.add(new_message)
         db.commit()
+        detect_meeting_intent.delay(lead.id, content)
 
+        room = f"user_{lead.sales_rep.user_id}" 
+        print(f"this is {room}")
         # Emit to socket for real-time update
         socketio.emit("new_message", {
             "lead_id": str(lead.id),
@@ -170,7 +174,8 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
             "sender_name": lead.name,
             "message_type": message_type,
             "timestamp": datetime.utcnow().strftime("%d %b %Y, %I:%M %p")
-        })
+        }, to=room)
+
 
         # Save notification
         notification = Notification(
@@ -192,7 +197,7 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
         socketio.emit("unread_update", {
             "lead_id": str(lead.id),
             "unread_count": len(unread_messages)
-        })
+        }, to=room)
 
     except Exception as e:
         print("❌ Error handling Messenger event:", str(e))

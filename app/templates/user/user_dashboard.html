@@ -45,6 +45,35 @@
     </div>
   </div>
 
+  <div class="mt-4">
+    <h4 class="mb-3">📅 Your Meetings Today</h4>
+    {% if today_meetings %}
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered">
+        <thead class="thead-light">
+          <tr>
+            <th>Time</th>
+            <th>Lead</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for meeting in today_meetings|sort(attribute='meeting_time', reverse=True) %}
+          <tr>
+            <td>{{ meeting.meeting_time.strftime('%I:%M %p') }}</td>
+            <td>{{ meeting.lead.name }}</td>
+            <td><span class="badge badge-info">{{ meeting.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted">No meetings scheduled for today.</p>
+    {% endif %}
+  </div>
+    
+  
   <!-- Future section: chart or detailed list can be added here -->
 </div>
 {% endblock %}

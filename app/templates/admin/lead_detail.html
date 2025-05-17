@@ -1,0 +1,71 @@
+{% extends 'admin/base_admin.html' %}
+{% block title %}Lead Detail{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h3 class="mb-4">Lead Details</h3>
+
+  <div class="card mb-4">
+    <div class="card-body">
+     <h5> <strong >{{ lead.name }}</strong> <small class="text-muted text-uppercase">({{ lead.platform }})</small></h5>
+      <p><strong >Status: </strong>
+        <span class="badge 
+          {% if lead.status == 'Inactive' %}bg-warning
+          {% elif lead.status == 'Qualified' %}bg-primary
+          {% elif lead.status == 'Converted' %}bg-success
+          {% else %}bg-info{% endif %}">{{ lead.status }}</span>
+      </p>
+      <p><strong>Sales Rep:</strong> {{ lead.sales_rep.name if lead.sales_rep else 'N/A' }}</p>
+      <p><strong>Assigned At:</strong> {{ lead.assigned_at.strftime('%b %d, %Y') }}</p>
+      <p><strong>Last Active:</strong> {{ lead.last_active_at.strftime('%b %d, %Y') if lead.last_active_at else 'N/A' }}</p>
+    </div>
+  </div>
+
+  <h5>Daily Summary Timeline</h5>
+  <!-- Trigger Button -->
+  <button class="btn btn-sm btn-outline-success mb-3" data-bs-toggle="modal" data-bs-target="#summaryModal">
+    Add Summary
+  </button>
+
+  <!-- Summary Modal -->
+  <div class="modal fade" id="summaryModal" tabindex="-1" aria-labelledby="summaryModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" action="{{ url_for('admin.add_lead_summary') }}">
+          <div class="modal-header">
+            <h5 class="modal-title" id="summaryModalLabel">Add Daily Summary</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" name="lead_id" value="{{ lead.id }}">
+            <div class="mb-3">
+              <label for="summary_date" class="form-label">Summary Date</label>
+              <input type="date" name="summary_date" class="form-control" required min="{{ lead.assigned_at.strftime('%Y-%m-%d') }}">
+            </div>
+            <div class="mb-3">
+              <label for="content" class="form-label">Summary</label>
+              <textarea name="content" class="form-control" rows="3" required></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-success">Save Summary</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <ul class="list-group">
+    {% for c in comments %}
+    <li class="list-group-item">
+      <strong>{{ c.summary_date.strftime('%A, %b %d') }}</strong><br>
+      <span class="text-muted fst-italic small">{{ c.generated_by }}</span><br>
+      {{ c.content }}
+    </li>
+    {% else %}
+    <li class="list-group-item text-muted text-center">No summaries found.</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}
