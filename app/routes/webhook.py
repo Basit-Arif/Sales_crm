@@ -9,13 +9,12 @@ from datetime import datetime
 from app import socketio
 from app.services.task import detect_meeting_intent_task,detect_meeting_intent
 
+
 # Load environment variables
 load_dotenv()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
-
 webhook_bp = Blueprint("webhook", __name__, url_prefix="/webhook")
-
 
 @webhook_bp.route("/massenger", methods=["GET"])
 @webhook_bp.route("massenger", methods=["GET"])
@@ -32,6 +31,8 @@ def verify_webhook():
 @webhook_bp.route("massenger", methods=["POST"])
 @webhook_bp.route("/massenger", methods=["POST"])
 def handle_webhook():
+    
+  
     print("🚀 Webhook hit!")
     body = request.get_json()
     print("📩 Webhook payload received:", body)

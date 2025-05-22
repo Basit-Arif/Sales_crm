@@ -23,6 +23,9 @@
       <tr>
         <td>
             {{ lead.name }}
+            {% if lead.has_new_message_after_summary %}
+              <span class="ms-1 text-danger" title="New messages after summary"><i class="fas fa-circle" style="font-size: 0.6rem;"></i></span>
+            {% endif %}
             {% if selected_company == 'all' and lead.sales_rep and lead.sales_rep.company %}
               <br><small class="text-muted">({{ lead.sales_rep.company.name }})</small>
             {% endif %}
@@ -38,7 +41,22 @@
           ">{{ lead.status }}</span>
         </td>
         <td>{{ lead.last_active_at.strftime('%b %d, %Y') if lead.last_active_at else 'N/A' }}</td>
-        <td>{{ lead.comment or 'Awaiting summary...' }}</td>
+        <td>
+          {% set latest_comment = lead.comments | sort(attribute='summary_date', reverse=true)
+                                  | selectattr('generated_by', 'equalto', 'gpt')
+                                  | map(attribute='content') | list | first %}
+          {% if lead.comment_html %}
+            <span title="{{ lead.comment_html|striptags }}">
+              {{ lead.comment_html[:150] ~ ('...' if lead.comment_html|length > 120 else '') | safe }}
+            </span>
+          {% elif latest_comment %}
+            <span title="{{ latest_comment }}">
+              {{ latest_comment[:150] ~ ('...' if latest_comment|length > 120 else '') }}
+            </span>
+          {% else %}
+            <span class="text-muted">Awaiting summary...</span>
+          {% endif %}
+        </td>
         <td>
           <a href="{{ url_for('admin.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-outline-primary">View</a>
         </td>

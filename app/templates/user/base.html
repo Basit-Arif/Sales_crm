@@ -111,6 +111,19 @@
         
       </nav>
       <main class="offset-md-2 col-md-10 py-0" style="max-height: calc(100vh - 56px); overflow-y: auto;">
+        <div class="bg-light text-center py-1" style="font-size: 0.85rem; border-bottom: 1px solid #ccc;">
+          <span class="mx-2">🕒 PST: <span id="pst-clock"></span></span>
+          <span class="mx-2">EST: <span id="est-clock"></span></span>
+          <span class="mx-2">GMT: <span id="gmt-clock"></span></span>
+          <span class="mx-2">PKT: <span id="pkt-clock"></span></span>
+          <br>
+          <div style="font-size: 0.75rem;">
+            <span class="mx-2 text-muted">📅 PST: <span id="pst-date"></span></span>
+            <span class="mx-2 text-muted">EST: <span id="est-date"></span></span>
+            <span class="mx-2 text-muted">GMT: <span id="gmt-date"></span></span>
+            <span class="mx-2 text-muted">PKT: <span id="pkt-date"></span></span>
+          </div>
+        </div>
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             <div class="flash-message">
@@ -129,11 +142,11 @@
         {% block content %}
 
         <h5 class="mt-4">📅 Today's Confirmed Meetings</h5>
-        {% if confirmed_meetings_today %}
+        {% if today_meetings %}
           <ul class="list-group">
-            {% for meeting in confirmed_meetings_today %}
+            {% for meeting in today_meetings %}
             <li class="list-group-item d-flex justify-content-between align-items-center">
-              {{ meeting.lead.name }} — {{ meeting.meeting_time.strftime('%I:%M %p') }}
+              {{ meeting.lead.name }} — {{ meeting.detected_date_string }} {{ meetign.detected_time_string }}
             </li>
             {% endfor %}
           </ul>
@@ -331,6 +344,7 @@ function fetchUnreadNotifications() {
 // Fetch on page load
 document.addEventListener("DOMContentLoaded", function () {
   fetchUnreadNotifications();
+  updateClocks();
 
   // Mark notifications as read when the notification dropdown is opened
   document.getElementById("notif-bell").addEventListener("click", function () {
@@ -351,6 +365,35 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
   </script>
+  <script>
+  function updateClocks() {
+    const pst = new Date().toLocaleTimeString("en-US", { timeZone: "America/Los_Angeles", hour12: true, hour: "2-digit", minute: "2-digit" });
+    const est = new Date().toLocaleTimeString("en-US", { timeZone: "America/New_York", hour12: true, hour: "2-digit", minute: "2-digit" });
+    const gmt = new Date().toLocaleTimeString("en-GB", { timeZone: "Etc/GMT", hour12: false, hour: "2-digit", minute: "2-digit" });
+    const pkt = new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Karachi", hour12: false, hour: "2-digit", minute: "2-digit" });
+
+    document.getElementById("pst-clock").textContent = pst;
+    document.getElementById("est-clock").textContent = est;
+    document.getElementById("gmt-clock").textContent = gmt;
+    document.getElementById("pkt-clock").textContent = pkt;
+
+    // Add date update for each timezone
+    const pstDate = new Date().toLocaleDateString("en-US", { timeZone: "America/Los_Angeles",  month: "short", day: "numeric",  });
+    const estDate = new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", });
+    const gmtDate = new Date().toLocaleDateString("en-GB", { timeZone: "Etc/GMT",  month: "short", day: "numeric", });
+    const pktDate = new Date().toLocaleDateString("en-GB", { timeZone: "Asia/Karachi", month: "short", day: "numeric"});
+
+    document.getElementById("pst-date").textContent = pstDate;
+    document.getElementById("est-date").textContent = estDate;
+    document.getElementById("gmt-date").textContent = gmtDate;
+    document.getElementById("pkt-date").textContent = pktDate;
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    setInterval(updateClocks, 1000);
+    updateClocks();
+  });
+  </script>
   {% block scripts %}
 
   {% endblock %}
@@ -360,10 +403,11 @@ document.addEventListener("DOMContentLoaded", function () {
     <div class="toast fade show bg-warning text-dark mb-2" role="alert">
       <div class="toast-header">
         <strong class="mr-auto">📝 Meeting Follow-Up</strong>
-        <small>{{ meeting.meeting_time.strftime('%I:%M %p') }}</small>
+        <small>{{ meeting.detected_date }}</small>
       </div>
+  
       <div class="toast-body">
-        What happened in your meeting with <strong>{{ meeting.lead.name }}</strong> at <strong>{{ meeting.meeting_time.strftime('%d %b %Y, %I:%M %p') }} </strong>?
+        What happened in your meeting with <strong>{{ meeting.lead.name }}</strong> at <strong>{{ meeting.detected_date_string }} {{ meeting.detected_time_string }} {{meeting.client_timezone}} </strong>?
         <button class="btn btn-sm btn-outline-dark ml-2" data-toggle="modal" data-target="#noteModal{{ meeting.id }}">Add Note</button>
       </div>
     </div>

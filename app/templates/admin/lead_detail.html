@@ -61,7 +61,7 @@
     <li class="list-group-item">
       <strong>{{ c.summary_date.strftime('%A, %b %d') }}</strong><br>
       <span class="text-muted fst-italic small">{{ c.generated_by }}</span><br>
-      {{ c.content }}
+      {{ c.content_html }}
     </li>
     {% else %}
     <li class="list-group-item text-muted text-center">No summaries found.</li>

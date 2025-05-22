@@ -9,12 +9,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 from sqlalchemy import func
+import pytz
+from flask import request
+
 
 meeting=Blueprint("meeting",__name__,url_prefix="/meeting")
 @meeting.route('/')
 def index():
     db = SessionLocal()
     current_user_id = session.get("user_id")
+    ip_address = request.remote_addr
+    print(f"ip_address{ip_address}")
+
 
     # Get sales_rep from user_id
     sales_rep = db.query(SalesRep).filter_by(user_id=current_user_id).first()
@@ -22,7 +28,7 @@ def index():
 
     meetings = db.query(Meeting).filter_by(sales_rep_id=sales_rep_id).all()
     leads = db.query(Lead).filter_by(sales_rep_id=sales_rep_id).all()
-    return render_template("meetings/index.html", meetings=meetings, current_user_id=current_user_id, leads=leads)
+    return render_template("meetings/index.html", meetings=meetings, current_user_id=current_user_id, leads=leads,pytz=pytz)
 
 
 # Route to update meeting status
@@ -59,15 +65,32 @@ def create():
 
         sales_rep_id = sales_rep.id
         lead_id = request.form.get("lead_id")
-        meeting_time = request.form.get("meeting_time")
+        date_str = request.form.get("meeting_date")         # e.g. "2025-08-22"
+        time_str = request.form.get("meeting_time")         # e.g. "3:00 PM"
+        client_timezone = request.form.get("client_timezone")  # e.g. "US/Pacific"
         original_message = request.form.get("original_message")
+
+        try:
+            local_tz = pytz.timezone(client_timezone)
+            try:
+                naive_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")  # 24-hour format
+            except ValueError:
+                naive_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %I:%M %p")  # 12-hour fallback
+            local_dt = local_tz.localize(naive_dt)
+            meeting_time_utc = local_dt.astimezone(pytz.utc)
+        except Exception as e:
+            flash(f"Invalid time or timezone: {e}", "danger")
+            return redirect(url_for("meeting.index"))
 
         new_meeting = Meeting(
             sales_rep_id=sales_rep_id,
             lead_id=lead_id,
-            meeting_time=datetime.strptime(meeting_time, "%Y-%m-%dT%H:%M"),
+            meeting_time_utc=meeting_time_utc,
+            client_timezone=client_timezone,
+            rep_timezone="Asia/Karachi",  # You may pull this dynamically later
             original_message=original_message,
-            detected_time_string=meeting_time,
+            detected_time_string=time_str,
+            detected_date_string=date_str,
             status="pending",
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
@@ -89,14 +112,32 @@ def edit(meeting_id):
         if request.method == "POST":
             date = request.form.get("meeting_date")
             time = request.form.get("meeting_time")
-            ampm = request.form.get("ampm")
-            meeting.meeting_time = datetime.strptime(f"{date} {time} {ampm}", "%Y-%m-%d %I:%M %p")
-            meeting.original_message = request.form.get("original_message")
-            meeting.detected_time_string = request.form.get("meeting_time")
+            original_message = request.form.get("original_message")
+
+            # Convert to UTC using stored client timezone
+            try:
+                from pytz import timezone
+                local_tz = timezone(meeting.client_timezone)
+                try:
+                    naive_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+                except ValueError:
+                    naive_dt = datetime.strptime(f"{date} {time}", "%Y-%m-%d %I:%M %p")
+                local_dt = local_tz.localize(naive_dt)
+                meeting.meeting_time_utc = local_dt.astimezone(pytz.utc)
+            except Exception as e:
+                flash(f"Invalid date/time format or timezone: {e}", "danger")
+                return redirect(url_for("meeting.index"))
+
+            # Update detected fields
+            meeting.detected_time_string = time
+            meeting.detected_date_string = date
+            meeting.original_message = original_message
+
             db.commit()
             flash("Meeting updated successfully!", "success")
             return redirect(url_for("meeting.index"))
 
+        # GET: load meeting edit modal context
         current_user_id = session.get("user_id")
         sales_rep = db.query(SalesRep).filter_by(user_id=current_user_id).first()
         leads = db.query(Lead).filter_by(sales_rep_id=sales_rep.id).all()

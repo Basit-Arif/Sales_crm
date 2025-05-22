@@ -1,17 +1,14 @@
-from app import create_app, socketio
-from requests import request
-from flask import session
+from app import create_app, socketio # Don't import `app` here
 from app.database import init_db
-from flask_socketio import join_room,leave_room
-
-
+from flask_socketio import join_room, leave_room
+from flask import session
+from flask_migrate import Migrate
 
 app = create_app()
-
+migrate = Migrate(app, init_db)  # ✅ Now `app` exists
 
 @socketio.on('connect')
 def handle_connect():
-
     print("🟢 A client connected")
 
 @socketio.on('disconnect')
@@ -27,7 +24,7 @@ def test_broadcast():
         "content": "📢 Real-time test",
         "timestamp": "Now"
     }, to=room)
-    return f"Test emitted from server to room {room} "
+    return f"Test emitted from server to room {room}"
 
 @socketio.on('join_room')
 def handle_join_room(data):
@@ -41,16 +38,6 @@ def handle_join_room(data):
     room = f"user_{actual_id}"
     join_room(room)
     print(f"✅ User {actual_id} joined room {room}")
-        
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True,port=5005)  # Uses eventlet or gevent automatically
-
-
-
-
-
-
-
-
-
+    socketio.run(app, debug=True, port=5005)

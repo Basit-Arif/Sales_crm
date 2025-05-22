@@ -53,6 +53,7 @@
         <thead class="thead-light">
           <tr>
             <th>Time</th>
+            <th>Local Time</th>
             <th>Lead</th>
             <th>Status</th>
           </tr>
@@ -60,7 +61,10 @@
         <tbody>
           {% for meeting in today_meetings|sort(attribute='meeting_time', reverse=True) %}
           <tr>
-            <td>{{ meeting.meeting_time.strftime('%I:%M %p') }}</td>
+            <td>{{ meeting.detected_date_string }} {{ meeting.detected_time_string }}</td>
+            <td>
+              {{ meeting.meeting_time_utc.astimezone(pytz.timezone(meeting.rep_timezone or 'Asia/Karachi')).strftime('%Y-%m-%d %I:%M') }}
+            </td>
             <td>{{ meeting.lead.name }}</td>
             <td><span class="badge badge-info">{{ meeting.status }}</span></td>
           </tr>

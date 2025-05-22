@@ -8,6 +8,7 @@ from flask_socketio import SocketIO
 from app.database import init_db
 from flask_wtf.csrf import generate_csrf
 from app.database import SessionLocal
+from app.models import db
 from app.models.models import User, SalesRep, Company,Lead,Meeting
 
 
@@ -21,6 +22,7 @@ def create_app():
    
     app.secret_key = 'basitarif234'
     app.config.from_object(Config)
+   
 
     # ✅ Don’t redeclare, just init it
     socketio.init_app(app)

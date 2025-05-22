@@ -63,6 +63,7 @@
             <strong>{{ meeting.lead_name }}</strong><br>
             <small>Rep: {{ meeting.rep_name }}</small>
           </div>
+          
           <span class="badge bg-info">{{ meeting.meeting_time.strftime('%b %d, %I:%M %p') }}</span>
         </li>
         {% else %}
@@ -137,35 +138,20 @@
     const url = new URL(window.location.href);
     const company = url.searchParams.get("company") || "all";
 
-    fetch("http://localhost:8000/process", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        lead_message: "Let's meet tomorrow at 2pm PST",
-        lead_id: 101
-      })
+    console.log(company)
+    fetch(`/admin/api/kpi_summary?company=${encodeURIComponent(company)}`)
+    .then(res => {
+      if (!res.ok) throw new Error("Network response was not ok");
+      return res.json();
     })
-    .then(res => res.json())
     .then(data => {
-      console.log("Response:", data);
+      document.getElementById("total-leads").textContent = data.total_leads;
+      document.getElementById("total-reps").textContent = data.total_reps;
+      document.getElementById("meetings-today").textContent = data.meetings_today;
+      document.getElementById("overdue-followups").textContent = data.overdue_followups;
+      
     })
-    .catch(err => {
-      console.error("Error:", err);
-    });
 
-    fetch(`/admin/api/kpi_summary?company=${company}`)
-      .then(res => res.json())
-      .then(data => {
-        document.getElementById("total-leads").textContent = data.total_leads;
-        document.getElementById("total-reps").textContent = data.total_reps;
-        document.getElementById("meetings-today").textContent = data.meetings_today;
-        document.getElementById("overdue-followups").textContent = data.overdue_followups;
-      })
-      .catch(err => {
-        console.error("Failed to load KPI summary:", err);
-      });
   });
 </script>
 {% endblock %}

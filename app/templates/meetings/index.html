@@ -43,8 +43,24 @@
                     </select>
                 </div>
                 <div class="form-group">
+                    <label for="meeting_date">Meeting Date</label>
+                    <input type="date" name="meeting_date" class="form-control" required>
+                </div>
+                <div class="form-group">
                     <label for="meeting_time">Meeting Time</label>
-                    <input type="datetime-local" name="meeting_time" class="form-control" required>
+                    <input type="time" name="meeting_time" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="client_timezone">Client Timezone</label>
+                    <select name="client_timezone" class="form-control" required>
+                        <option value="">Select Timezone</option>
+                        <option value="US/Pacific">US/Pacific</option>
+                        <option value="US/Eastern">US/Eastern</option>
+                        <option value="Europe/London">Europe/London</option>
+                        <option value="Asia/Karachi">Asia/Karachi</option>
+                        <option value="Asia/Dubai">Asia/Dubai</option>
+                        <!-- Add more timezones as needed -->
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="original_message">Original Message</label>
@@ -63,14 +79,16 @@
     <table class="table table-bordered table-hover">
         <thead class="thead-dark">
             <tr>
-                <th>Meeting ID ↓</th>
-                <th>Lead Name</th>
-                
-                <th>Date</th>
-                <th>Time</th>
-                <th>Status</th>
-                <th>Original Message</th>
-                <th>Actions</th>
+              <th>Meeting ID</th>
+              <th>Lead Name</th>
+              <th>Client Date</th>
+              <th>Client Time</th>
+              <th>Client Timezone</th>
+              <th>Local Date</th>
+              <th>Local Time</th>
+              <th>Status</th>
+              <th>Message</th>
+              <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -78,9 +96,14 @@
             <tr style="background-color: {% if loop.index0 % 2 == 0 %}#e6f7ff{% else %}#ffffff{% endif %};">
                 <td>{{ meeting.id }}</td>
                 <td>{{ meeting.lead.name }}</td>
+                <td>{{ meeting.detected_date_string }}</td>
+                <td>{{ meeting.detected_time_string }}</td>
+                <td>{{ meeting.client_timezone }}</td>
+                {% set utc = pytz.utc %}
+                {% set local_time = utc.localize(meeting.meeting_time_utc).astimezone(pytz.timezone(meeting.rep_timezone or 'Asia/Karachi')) %}
+                <td>{{ local_time.strftime('%Y-%m-%d') }}</td>
+                <td>{{ local_time.strftime('%I:%M %p') }}</td>
                 
-                <td>{{ meeting.meeting_time.strftime('%Y-%m-%d') }}</td>
-                <td>{{ meeting.meeting_time.strftime('%I:%M %p') }}</td>
                 <td>
                   <span class="badge 
                     {% if meeting.status == 'confirmed' %}badge-success
@@ -121,7 +144,7 @@
     </table>
 </div>
 
-{% for meeting in meetings|sort(attribute='meeting_time', reverse=True) if meeting.sales_rep.user_id == current_user_id %}
+{% for meeting in meetings|sort(attribute='meeting_time_utc', reverse=True) if meeting.sales_rep.user_id == current_user_id %}
 <div class="modal fade" id="editModal{{ meeting.id }}" tabindex="-1" role="dialog" aria-labelledby="editModalLabel{{ meeting.id }}" aria-hidden="true">
   <div class="modal-dialog" role="document">
     <form method="POST" action="{{ url_for('meeting.edit', meeting_id=meeting.id) }}">
@@ -136,12 +159,8 @@
           <div class="form-group">
             <label for="meeting_time">Meeting Time</label>
             <div class="d-flex">
-              <input type="date" name="meeting_date" class="form-control mr-1" required value="{{ meeting.meeting_time.strftime('%Y-%m-%d') }}">
-              <input type="time" name="meeting_time" class="form-control mr-1" required value="{{ meeting.meeting_time.strftime('%H:%M') }}">
-              <select name="ampm" class="form-control" required>
-                <option value="AM" {% if meeting.meeting_time.strftime('%p') == 'AM' %}selected{% endif %}>AM</option>
-                <option value="PM" {% if meeting.meeting_time.strftime('%p') == 'PM' %}selected{% endif %}>PM</option>
-              </select>
+              <input type="date" name="meeting_date" class="form-control mr-1" required value="{{ meeting.detected_date_string }}">
+              <input type="time" name="meeting_time" class="form-control" required value="{{ meeting.detected_time_string }}">
             </div>
           </div>
           <div class="form-group">
@@ -161,20 +180,22 @@
 <script>
 function filterMeetings(type) {
   const rows = document.querySelectorAll("table tbody tr");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  const offsetDate = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
+  const localTodayStr = offsetDate.toISOString().slice(0, 10);
   const weekEnd = new Date();
   weekEnd.setDate(weekEnd.getDate() + 7);
   const weekEndStr = weekEnd.toISOString().slice(0, 10);
 
   rows.forEach(row => {
-    const dateCell = row.querySelector("td:nth-child(3)");
+    const dateCell = row.querySelector("td:nth-child(6)");
     if (!dateCell) return;
 
     const date = dateCell.textContent.trim();
     let show = true;
 
-    if (type === 'today' && date !== today) show = false;
-    if (type === 'week' && (date < today || date > weekEndStr)) show = false;
+    if (type === 'today' && date !== localTodayStr) show = false;
+    if (type === 'week' && (date < localTodayStr || date > weekEndStr)) show = false;
 
     row.style.display = type === 'all' ? '' : (show ? '' : 'none');
   });

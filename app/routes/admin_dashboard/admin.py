@@ -9,6 +9,11 @@ from werkzeug.security import generate_password_hash
 from app.routes.auth import admin_required
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
+import pytz
+from app.services.task import summarize_leads_for_date
+import markdown
+from markupsafe import Markup
+
 
 
 
@@ -110,10 +115,10 @@ def dashboard():
             .join(Lead, Lead.id == Meeting.lead_id)\
             .filter(
                 Meeting.status == "confirmed",
-                Meeting.meeting_time >= today,
-                Meeting.meeting_time <= end_of_week
+                Meeting.meeting_time_utc >= today,
+                Meeting.meeting_time_utc <= end_of_week
             )\
-            .order_by(Meeting.meeting_time)\
+            .order_by(Meeting.meeting_time_utc)\
             .limit(10).all()
         else:
             company_id = int(company_filter)
@@ -127,16 +132,19 @@ def dashboard():
             .filter(
                 Meeting.status == "confirmed",
                 SalesRep.company_id == company_id,
-                Meeting.meeting_time >= today,
-                Meeting.meeting_time <= end_of_week
+                Meeting.meeting_time_utc >= today,
+                Meeting.meeting_time_utc <= end_of_week
             )\
-            .order_by(Meeting.meeting_time)\
+            .order_by(Meeting.meeting_time_utc)\
             .limit(10).all()
 
         upcoming_meetings = [{
             "rep_name": m.rep_name,
             "lead_name": m.lead_name,
-            "meeting_time": m.Meeting.meeting_time
+            "meeting_time": m.Meeting.meeting_time_utc.astimezone(
+                pytz.timezone(m.Meeting.rep_timezone or "Asia/Karachi")
+            ).strftime("%Y-%m-%d %I:%M %p"),
+            "timezone": m.Meeting.rep_timezone or "Asia/Karachi"
         } for m in upcoming_meetings_raw]
 
         # --- Last Active Reps Section ---
@@ -191,19 +199,17 @@ def dashboard():
 
 @admin_bp.route('/api/kpi_summary')
 def api_kpi_summary():
+    from datetime import datetime
+    import pytz
     db = SessionLocal()
     try:
         company_filter = request.args.get("company", "all")
-        today = datetime.utcnow().date()    
+        today_utc = datetime.utcnow()
 
         if company_filter == 'all':
             total_leads = db.query(Lead).count()
             total_reps = db.query(SalesRep).count()
-            meetings_today = db.query(Meeting).filter(func.date(Meeting.meeting_time) == today).count()
-            overdue_followups = db.query(Lead).filter(
-                Lead.status == 'active',
-                Lead.last_active_at < datetime.utcnow() - timedelta(days=2)
-            ).count()
+            confirmed_meetings = db.query(Meeting).filter(Meeting.status == "confirmed").all()
         else:
             try:
                 company_id = int(company_filter)
@@ -212,15 +218,29 @@ def api_kpi_summary():
 
             total_leads = db.query(Lead).join(SalesRep).filter(SalesRep.company_id == company_id).count()
             total_reps = db.query(SalesRep).filter_by(company_id=company_id).count()
-            meetings_today = db.query(Meeting).join(SalesRep).filter(
+            confirmed_meetings = db.query(Meeting).join(SalesRep).filter(
                 SalesRep.company_id == company_id,
-                func.date(Meeting.meeting_time) == today
-            ).count()
-            overdue_followups = db.query(Lead).join(SalesRep).filter(
-                SalesRep.company_id == company_id,
-                Lead.status == 'active',
-                Lead.last_active_at < datetime.utcnow() - timedelta(days=2)
-            ).count()
+                Meeting.status == "confirmed"
+            ).all()
+
+        # Count meetings that occur today in each rep's local time
+        meetings_today = 0
+        for m in confirmed_meetings:
+            try:
+                rep_tz = pytz.timezone(m.rep_timezone or "Asia/Karachi")
+                local_today = datetime.now(rep_tz).date()
+                local_meeting_date = m.meeting_time_utc.astimezone(rep_tz).date()
+                if local_meeting_date == local_today:
+                    meetings_today += 1
+            except Exception:
+                continue  # skip any with bad timezone
+
+        # Overdue follow-up remains unchanged
+        overdue_followups = db.query(Lead).join(SalesRep).filter(
+            (True if company_filter == 'all' else SalesRep.company_id == company_id),
+            Lead.status == 'active',
+            Lead.last_active_at < datetime.utcnow() - timedelta(days=2)
+        ).count()
 
         return jsonify({
             "total_leads": total_leads,
@@ -241,22 +261,43 @@ def leads_overview():
     db = SessionLocal()
     try:
         company_filter = request.args.get("company", "all")
-
-        today = datetime.utcnow()
+        today = datetime.now()
+        summary_date = today.date()
         inactive_threshold = today - timedelta(days=5)
 
+        # Filter leads based on company
         if company_filter == "all":
             leads = db.query(Lead).all()
         else:
             try:
                 company_id = int(company_filter)
+                leads = db.query(Lead).join(SalesRep).filter(SalesRep.company_id == company_id).all()
             except ValueError:
                 return "Invalid company ID", 400
 
-            leads = db.query(Lead).join(SalesRep).filter(SalesRep.company_id == company_id).all()
+        # Collect data to minimize repeated DB queries
+        lead_ids = [lead.id for lead in leads]
+        comment_map = {
+            (c.lead_id, c.summary_date): c
+            for c in db.query(LeadComment)
+                      .filter(LeadComment.lead_id.in_(lead_ids),
+                              LeadComment.generated_by == "gpt")
+                      .all()
+        }
 
-        # Update inactive leads
+        latest_msg_map = {
+            r.lead_id: r.latest_time
+            for r in db.query(
+                LeadMessage.lead_id,
+                func.max(LeadMessage.timestamp).label("latest_time")
+            ).filter(LeadMessage.lead_id.in_(lead_ids))
+             .group_by(LeadMessage.lead_id)
+             .all()
+        }
+
+        # Process each lead
         for lead in leads:
+            # Update inactive
             if lead.status.lower() != "inactive" and lead.last_active_at and lead.last_active_at < inactive_threshold:
                 lead.status = "inactive"
                 db.add(LeadStatusHistory(
@@ -265,13 +306,27 @@ def leads_overview():
                     changed_by=lead.sales_rep_id
                 ))
 
-        db.commit()
+            last_active_date = lead.last_active_at.date() if lead.last_active_at else None
+            latest_comment = comment_map.get((lead.id, last_active_date))
+            latest_msg_time = latest_msg_map.get(lead.id)
 
-        # Reload updated leads (with filter again)
-        leads_query = db.query(Lead).join(SalesRep)
-        if company_filter != "all":
-            leads_query = leads_query.filter(SalesRep.company_id == company_id)
-        leads = leads_query.order_by(Lead.last_active_at.desc()).all()
+            # Trigger summary only if needed
+            if last_active_date and latest_msg_time and (
+                not latest_comment or latest_msg_time > latest_comment.created_at
+            ):
+                print(f"🔁 Triggering summary for lead {lead.id} on {last_active_date}")
+                summarize_leads_for_date.delay(lead.id, str(last_active_date))
+
+            # Attach comment to lead for UI
+            lead.comment = latest_comment.content if latest_comment else None
+            lead.comment_html = Markup(markdown.markdown(lead.comment)) if lead.comment else ""
+            lead.has_new_message_after_summary = bool(
+                latest_msg_time and (
+                    not latest_comment or latest_msg_time > latest_comment.created_at
+                )
+            )
+
+        db.commit()
 
         return render_template(
             "admin/lead_overview.html",
@@ -279,6 +334,9 @@ def leads_overview():
             selected_company=company_filter
         )
 
+    except Exception as e:
+        traceback.print_exc()
+        return "Server Error", 500
     finally:
         db.close()
 
@@ -288,7 +346,6 @@ def leads_overview():
 def lead_detail(lead_id):
     db = SessionLocal()
     try:
-        # Load the lead with sales rep and company (if needed)
         lead = db.query(Lead)\
             .options(joinedload(Lead.sales_rep).joinedload(SalesRep.company))\
             .filter(Lead.id == lead_id).first()
@@ -296,11 +353,13 @@ def lead_detail(lead_id):
         if not lead:
             return "Lead not found", 404
 
-        # Get GPT-generated daily comment summaries for this lead
         comments = db.query(LeadComment)\
             .filter_by(lead_id=lead_id)\
             .order_by(LeadComment.summary_date.desc())\
             .all()
+        
+        for comment in comments:
+            comment.content_html = Markup(markdown.markdown(comment.content)) if comment.content else ""
 
         return render_template("admin/lead_detail.html", lead=lead, comments=comments)
 
@@ -356,8 +415,8 @@ def salesrep_overview():
     try:
         company_filter = request.args.get("company", "all")
         status_filter = request.args.get("status")
-        from_date_raw = request.args.get("from_date",datetime.now().strftime("%Y-%m-%d"))
-        to_date_raw = request.args.get("to_date",datetime.now().strftime("%Y-%m-%d"))
+        from_date_raw = request.args.get("from_date", datetime.now().strftime("%Y-%m-%d"))
+        to_date_raw = request.args.get("to_date", datetime.now().strftime("%Y-%m-%d"))
         query = request.args.get("q", "").lower()
 
         from_dt = datetime.strptime(from_date_raw, "%Y-%m-%d") if from_date_raw else None
@@ -397,12 +456,26 @@ def salesrep_overview():
                 converted_leads_query = converted_leads_query.filter(Lead.assigned_at <= to_dt)
             converted_leads_query = converted_leads_query.count()
 
+            # Meeting count filters should use meeting_time_utc and rep's local timezone
             meeting_query = db.query(Meeting).filter_by(sales_rep_id=rep.id, status="confirmed")
+
+            # Try to get a timezone from the latest meeting
+            rep_timezone = "Asia/Karachi"
+            latest_meeting = db.query(Meeting).filter_by(sales_rep_id=rep.id).order_by(Meeting.created_at.desc()).first()
+            if latest_meeting and latest_meeting.rep_timezone:
+                rep_timezone = latest_meeting.rep_timezone
+
+            tz = pytz.timezone(rep_timezone)
             if from_dt:
-                meeting_query = meeting_query.filter(Meeting.meeting_time >= from_dt)
+                from_dt_utc = tz.localize(from_dt).astimezone(pytz.utc)
+                meeting_query = meeting_query.filter(Meeting.meeting_time_utc >= from_dt_utc)
             if to_dt:
-                meeting_query = meeting_query.filter(Meeting.meeting_time <= to_dt)
+                to_dt_utc = tz.localize(to_dt + timedelta(days=1)).astimezone(pytz.utc)
+                meeting_query = meeting_query.filter(Meeting.meeting_time_utc < to_dt_utc)
+
             meeting_count = meeting_query.count()
+
+            
 
             last_msg = db.query(func.max(LeadMessage.timestamp))\
                 .join(Lead, Lead.id == LeadMessage.lead_id)\
@@ -413,6 +486,7 @@ def salesrep_overview():
             # Apply status filter after calculating
             if status_filter and current_status.lower() != status_filter.lower():
                 continue
+            
 
             reps.append({
                 "name": rep.name,
@@ -420,8 +494,10 @@ def salesrep_overview():
                 "total_leads": total_leads,
                 "converted_leads_query": converted_leads_query,
                 "meetings": meeting_count,
+                "confirmed_meetings": meeting_count,  # same as 'meetings'
                 "last_active": last_msg,
                 "status": current_status
+                # Optionally add "local_meeting_times": local_meeting_times
             })
 
         return render_template(

@@ -24,7 +24,7 @@
     </div>
     <div class="col-md-3">
       <label class="form-label">Search Rep</label>
-      <input type="text" name="q" class="form-control" placeholder="e.g. Ali Raza" value="{{ request.args.get('q') }}">
+      <input type="text" name="q" class="form-control" placeholder="e.g. Ali Raza" value="{{ request.args.get('q', '') }}">
     </div>
     <div class="col-12">
       <button class="btn btn-sm btn-primary">Apply Filters</button>
@@ -51,7 +51,7 @@
         <td>{{ rep.total_leads }}</td>
         <td>{{ rep.converted_leads_query }}</td>
         <td>
-          {{ rep.meetings }}
+          {{ rep.confirmed_meetings }}
           <small class="text-muted d-block" title="Only confirmed meetings are counted">(Confirmed Only)</small>
         </td>
         <td>{{ rep.last_active.strftime('%b %d, %I:%M %p') if rep.last_active else 'N/A' }}</td>

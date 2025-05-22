@@ -1,6 +1,12 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, func
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, func,Text
 from sqlalchemy.orm import relationship, declarative_base
+
 from datetime import datetime
+import pytz
+
+def local_now():
+    return datetime.now(pytz.timezone("Asia/Karachi"))
 
 
 Base = declarative_base()
@@ -75,7 +81,7 @@ class LeadMessage(Base):
     message_type = Column(String(50), default="text")  # e.g., text, image, file
     direction = Column(String(10), default="out")  # out (sent by rep), in (received from user)
     status = Column(String(20), default="sent")  # sent, delivered, read
-    timestamp = Column(DateTime, default=func.now())
+    timestamp = Column(DateTime, default=local_now,nullable=False)
     read_at = Column(DateTime, nullable=True)
     is_read = Column(Boolean, default=False)
     platform_message_id = Column(String(255), nullable=True)
@@ -107,8 +113,13 @@ class Meeting(Base):
     sales_rep_id = Column(Integer, ForeignKey('sales_reps.id'), nullable=False)
     lead_id = Column(Integer, ForeignKey('leads.id'), nullable=False)
 
-    meeting_time = Column(DateTime, nullable=False)  # Converted to rep’s timezone
+    meeting_time_utc = Column(DateTime, nullable=False)       # Always store in UTC
+    client_timezone = Column(String(50), nullable=False)       # e.g., 'US/Pacific'
+    rep_timezone = Column(String(50), nullable=True)
+
+    
     original_message = Column(String(100), nullable=False)  # Full message that triggered the meeting detection
+    detected_date_string = Column(String(100))       # Extracted date phrase like "next Friday"
     detected_time_string = Column(String(100))       # Extracted time phrase like "5pm"
     status = Column(String(20), default="pending")   # pending / confirmed / cancelled / rescheduled
     notes = Column(String(200))                             # Optional field for rep’s update post meeting
@@ -125,10 +136,11 @@ class LeadComment(Base):
 
     id = Column(Integer, primary_key=True)
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
-    content = Column(String(300), nullable=False)  # GPT summary
+    content = Column(Text, nullable=False)  # GPT summary
     summary_date = Column(DateTime, nullable=False)  # E.g., 2024-08-27
     generated_by = Column(String(20), default="gpt")  # or "gpt","user","admin"
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
     lead = relationship("Lead", backref="comments")
 
