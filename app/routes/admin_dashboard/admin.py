@@ -1,7 +1,6 @@
-from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session
-from app.database import SessionLocal
+from flask import Flask, Blueprint, render_template, url_for, redirect, jsonify, request, flash, session, current_app, g
 import random
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 from datetime import datetime as dt
 from app.models.models import User, SalesRep, Company,Lead,Meeting,LeadMessage,LeadStatusHistory,LeadComment
 import traceback
@@ -10,14 +9,31 @@ from app.routes.auth import admin_required
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 import pytz
-from app.services.task import summarize_leads_for_date
+from celery import current_app
 import markdown
 from markupsafe import Markup
-
+from app import db  # Add this if not already present
+from app.services.utils import convert_utc_to_timezone
+from app.services.task import summarize_leads_for_date
+from app import db  # or just import your app if it's already initialized
 
 
 
 admin_bp=Blueprint("admin",__name__,url_prefix="/admin")
+
+# --- DB session management using Flask g ---
+def get_db():
+    if 'db' not in g:
+        g.db = db.session
+    return g.db
+
+@admin_bp.teardown_app_request
+def teardown_db(exception=None):
+    db_session = g.pop('db', None)
+    if db_session is not None:
+        db_session.close()
+
+
 
 # @admin.before_request
 # def restrict_to_admins():
@@ -36,7 +52,7 @@ admin_bp=Blueprint("admin",__name__,url_prefix="/admin")
 
 @admin_bp.route("/add-user", methods=["GET", "POST"])
 def add_user():
-    db = SessionLocal()
+    db = get_db()
 
     if request.method == "POST":
         try:
@@ -88,12 +104,16 @@ def add_user():
     
 @admin_bp.route('/')
 def index():
+    print(session["user_id"])
+    # Fetch all companies for the dropdown
+    
+
     return render_template('admin/base_admin.html')
 
 
 @admin_bp.route('/dashboard')
 def dashboard():
-    db = SessionLocal()
+    db = get_db()
     try:
         company_filter = request.args.get('company')
         if company_filter:
@@ -141,9 +161,7 @@ def dashboard():
         upcoming_meetings = [{
             "rep_name": m.rep_name,
             "lead_name": m.lead_name,
-            "meeting_time": m.Meeting.meeting_time_utc.astimezone(
-                pytz.timezone(m.Meeting.rep_timezone or "Asia/Karachi")
-            ).strftime("%Y-%m-%d %I:%M %p"),
+            "meeting_time": convert_utc_to_timezone(m.Meeting.meeting_time_utc, m.Meeting.rep_timezone or "Asia/Karachi"),
             "timezone": m.Meeting.rep_timezone or "Asia/Karachi"
         } for m in upcoming_meetings_raw]
 
@@ -192,7 +210,8 @@ def dashboard():
             messages_data=messages_data,
             last_active_reps=last_active_reps,
             upcoming_meetings=upcoming_meetings,
-            selected_company=company_filter
+            selected_company=company_filter,
+            
         )
     finally:
         db.close()
@@ -201,7 +220,7 @@ def dashboard():
 def api_kpi_summary():
     from datetime import datetime
     import pytz
-    db = SessionLocal()
+    db = get_db()
     try:
         company_filter = request.args.get("company", "all")
         today_utc = datetime.utcnow()
@@ -258,7 +277,7 @@ def api_kpi_summary():
 
 @admin_bp.route("/leads/overview")
 def leads_overview():
-    db = SessionLocal()
+    db = get_db()
     try:
         company_filter = request.args.get("company", "all")
         today = datetime.now()
@@ -276,23 +295,25 @@ def leads_overview():
                 return "Invalid company ID", 400
 
         # Collect data to minimize repeated DB queries
+        from collections import defaultdict
         lead_ids = [lead.id for lead in leads]
-        comment_map = {
-            (c.lead_id, c.summary_date): c
-            for c in db.query(LeadComment)
-                      .filter(LeadComment.lead_id.in_(lead_ids),
-                              LeadComment.generated_by == "gpt")
-                      .all()
-        }
+        comment_map = defaultdict(list)
+        for c in (
+            db.query(LeadComment)
+            .filter(LeadComment.lead_id.in_(lead_ids),
+                    LeadComment.generated_by == "gpt")
+            .all()
+        ):
+            key = (c.lead_id, c.summary_date.date() if isinstance(c.summary_date, datetime) else c.summary_date)
+            comment_map[key].append(c)
 
         latest_msg_map = {
-            r.lead_id: r.latest_time
-            for r in db.query(
+            r.lead_id: r.latest_time for r in db.query(
                 LeadMessage.lead_id,
                 func.max(LeadMessage.timestamp).label("latest_time")
             ).filter(LeadMessage.lead_id.in_(lead_ids))
-             .group_by(LeadMessage.lead_id)
-             .all()
+            .group_by(LeadMessage.lead_id)
+            .all()
         }
 
         # Process each lead
@@ -306,14 +327,22 @@ def leads_overview():
                     changed_by=lead.sales_rep_id
                 ))
 
-            last_active_date = lead.last_active_at.date() if lead.last_active_at else None
-            latest_comment = comment_map.get((lead.id, last_active_date))
             latest_msg_time = latest_msg_map.get(lead.id)
+            print(latest_msg_time)
 
-            # Trigger summary only if needed
-            if last_active_date and latest_msg_time and (
-                not latest_comment or latest_msg_time > latest_comment.created_at
-            ):
+            # Match comments for the same summary date, but compare by exact datetime
+            last_active_date = latest_msg_time.date() if latest_msg_time else None
+            latest_comment_list = comment_map.get((lead.id, last_active_date), [])
+            filtered_comments = [
+                c for c in latest_comment_list
+                if c.created_at and latest_msg_time and c.created_at > latest_msg_time
+            ]
+            latest_comment = filtered_comments[-1] if filtered_comments else None
+
+            print(f"the latest comment is {filtered_comments} and the last_active_date is {last_active_date}")
+
+            # Trigger summary only if no GPT comment exists after latest message
+            if latest_msg_time and not filtered_comments:
                 print(f"🔁 Triggering summary for lead {lead.id} on {last_active_date}")
                 summarize_leads_for_date.delay(lead.id, str(last_active_date))
 
@@ -344,7 +373,7 @@ def leads_overview():
 
 @admin_bp.route('/leads/<int:lead_id>')
 def lead_detail(lead_id):
-    db = SessionLocal()
+    db = get_db()
     try:
         lead = db.query(Lead)\
             .options(joinedload(Lead.sales_rep).joinedload(SalesRep.company))\
@@ -369,7 +398,7 @@ def lead_detail(lead_id):
 
 @admin_bp.route('/leads/add-summary', methods=['POST'])
 def add_lead_summary():
-    db = SessionLocal()
+    db = get_db()
     try:
         lead_id = request.form.get("lead_id")
         summary_date = request.form.get("summary_date")
@@ -411,7 +440,7 @@ def add_lead_summary():
 
 @admin_bp.route("/salesrep/overview")
 def salesrep_overview():
-    db = SessionLocal()
+    db = get_db()
     try:
         company_filter = request.args.get("company", "all")
         status_filter = request.args.get("status")
@@ -513,7 +542,7 @@ def salesrep_overview():
 
 @admin_bp.route('/salesrep/<int:rep_id>')
 def salesrep_detail(rep_id):
-    db = SessionLocal()
+    db = get_db()
     try:
         rep = db.query(SalesRep).filter_by(id=rep_id).first()
         if not rep:
@@ -557,3 +586,9 @@ def salesrep_detail(rep_id):
         )
     finally:
         db.close()
+
+@admin_bp.route("/test-companies")
+def test_companies():
+    db = get_db()
+    companies = db.query(Company).all()
+    return jsonify([{"id": c.id, "name": c.name} for c in companies])

@@ -3,8 +3,9 @@ import os
 import requests
 from dotenv import load_dotenv
 from datetime import datetime
-from app.database import SessionLocal
+from app.models import db,local_now
 from app.models.models import LeadMessage
+
 load_dotenv()
 
 
@@ -28,7 +29,6 @@ def get_user_name(psid: str) -> str | None:
 
 
 def send_message(psid: str, text: str,lead_id: int,message_type="text"):
-    db = SessionLocal()
 
     # 📝 Step 1: Save the message first with status = 'pending'
     new_message = LeadMessage(
@@ -38,10 +38,10 @@ def send_message(psid: str, text: str,lead_id: int,message_type="text"):
         message_type=message_type,
         direction="out",
         status="pending",
-        timestamp=datetime.utcnow()
+        timestamp=local_now()
     )
-    db.add(new_message)
-    db.commit()  # Commit to get the ID
+    db.session.add(new_message)
+    db.session.commit()  # Commit to get the ID
 
     # 🌐 Step 2: Try sending to Facebook
     url = "https://graph.facebook.com/v17.0/me/messages"
@@ -73,6 +73,6 @@ def send_message(psid: str, text: str,lead_id: int,message_type="text"):
         print("❌ Error while processing Facebook response:", e)
         new_message.status = "failed"
 
-    db.commit()
-    db.close()
+    db.session.commit()
+    db.session.remove()
     return response

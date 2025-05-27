@@ -1,7 +1,7 @@
-from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session
+from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session,current_app
 from app.routes.auth import login_required
-from app.database import SessionLocal
 from app.models.models import Lead,LeadMessage,SalesRep,Notification,Meeting
+from app.models import db
 from app.services.massenger_services import send_message
 from sqlalchemy.orm import joinedload
 from datetime import datetime,timedelta
@@ -18,10 +18,10 @@ user_bp=Blueprint("user",__name__,url_prefix="/user")
 def index():
 
 
-    db = SessionLocal()
+    session_db = db.session
     try:
         user_id = session.get("user_id")
-        sales_rep = db.query(SalesRep).filter_by(user_id=user_id).first()
+        sales_rep = session_db.query(SalesRep).filter_by(user_id=user_id).first()
 
         if not sales_rep:
             flash("Sales representative not found.", "error")
@@ -31,7 +31,7 @@ def index():
         days_range = request.args.get("date_range", default=0, type=int)
         filter_date = datetime.utcnow().date() - timedelta(days=days_range) if days_range else datetime.utcnow().date()
 
-        today_leads = db.query(Lead).filter(
+        today_leads = session_db.query(Lead).filter(
             Lead.sales_rep_id == sales_rep.id,
             Lead.assigned_at >= datetime(filter_date.year, filter_date.month, filter_date.day)
         ).all()
@@ -51,7 +51,7 @@ def index():
         print("start_utc",start_utc)
         print("end_utc",end_utc)
 
-        today_meetings = db.query(Meeting).options(
+        today_meetings = session_db.query(Meeting).options(
             joinedload(Meeting.lead)
         ).filter(
             Meeting.sales_rep_id == sales_rep.id,
@@ -60,14 +60,14 @@ def index():
         ).order_by(Meeting.meeting_time_utc.asc()).all()
 
         # ✅ Pending feedback logic
-        latest_meeting = db.query(Meeting).filter_by(sales_rep_id=sales_rep.id).order_by(Meeting.created_at.desc()).first()
+        latest_meeting = session_db.query(Meeting).filter_by(sales_rep_id=sales_rep.id).order_by(Meeting.created_at.desc()).first()
         rep_timezone = latest_meeting.rep_timezone if latest_meeting and latest_meeting.rep_timezone else "Asia/Karachi"
         rep_tz = pytz.timezone(rep_timezone)
 
         now_local = datetime.now(rep_tz)  # This is your local time (aware)
         now_utc_equivalent = now_local.astimezone(pytz.utc) 
 
-        pending_feedback = db.query(Meeting).options(
+        pending_feedback = session_db.query(Meeting).options(
             joinedload(Meeting.lead)
         ).filter(
             Meeting.sales_rep_id == sales_rep.id,
@@ -82,7 +82,7 @@ def index():
             meeting.local_time = meeting.meeting_time_utc.astimezone(rep_tz)
 
     finally:
-        db.close()
+        session_db.close()
 
     return render_template(
         "user/user_dashboard.html",
@@ -97,9 +97,9 @@ def index():
 @user_bp.route('/dashboard')
 @login_required
 def dashboard():
-    db = SessionLocal()
+    session_db = db.session
     user_id = session.get("user_id")
-    sales_rep_id = db.query(SalesRep).filter_by(user_id=user_id).first()
+    sales_rep_id = session_db.query(SalesRep).filter_by(user_id=user_id).first()
 
     if not sales_rep_id:
         return "SalesRep not found for this user", 403
@@ -107,7 +107,7 @@ def dashboard():
     
     print("-------sales_rep_id",sales_rep_id.id)
 
-    leads = db.query(Lead).options(joinedload(Lead.messages)).filter_by(sales_rep_id=sales_rep_id.id).all()
+    leads = session_db.query(Lead).options(joinedload(Lead.messages)).filter_by(sales_rep_id=sales_rep_id.id).all()
 
     # Build list of dictionaries to avoid DetachedInstanceError
     processed_leads = []
@@ -120,7 +120,7 @@ def dashboard():
             'status': lead.status.lower() if lead.status else 'active'  # 🟢 add status here
         })
 
-    db.close()
+    session_db.close()
 
     return render_template(
         "user/massenger_chat.html",
@@ -134,12 +134,12 @@ def dashboard():
 @user_bp.route("/lead/<int:lead_id>")
 @login_required
 def view_chat(lead_id):
-    db = SessionLocal()
+    session_db = db.session
     user_id = session["user_id"]
-    sales_rep_id = db.query(SalesRep).filter_by(user_id=user_id).first()
+    sales_rep_id = session_db.query(SalesRep).filter_by(user_id=user_id).first()
 
     # Preload all leads for sidebar
-    leads_query = db.query(Lead).options(joinedload(Lead.messages)).filter_by(sales_rep_id=sales_rep_id.id).all()
+    leads_query = session_db.query(Lead).options(joinedload(Lead.messages)).filter_by(sales_rep_id=sales_rep_id.id).all()
 
     # Pre-process sidebar leads
     processed_leads = []
@@ -158,7 +158,7 @@ def view_chat(lead_id):
                     msg.read_at = datetime.utcnow()
                     msg.status = 'read'
                     read_ids.append(msg.id)
-            db.commit()
+            session_db.commit()
 
             if read_ids:
                 socketio.emit("message_read", {
@@ -191,7 +191,7 @@ def view_chat(lead_id):
             'status': lead.status.lower() if lead.status else 'active'
         })
 
-    db.close()
+    session_db.close()
 
     return render_template(
         "user/massenger_chat.html",
@@ -210,8 +210,8 @@ import mimetypes
 @user_bp.route("/lead/<int:lead_id>/send", methods=["POST"])
 @login_required
 def send_message_to_lead(lead_id):
-    db = SessionLocal()
-    selected_lead = db.query(Lead).filter_by(id=lead_id).first()
+    session_db = db.session
+    selected_lead = session_db.query(Lead).filter_by(id=lead_id).first()
 
     if selected_lead:
         text = request.form.get("message", "").strip()
@@ -249,7 +249,7 @@ def send_message_to_lead(lead_id):
             if status != 200:
                 flash("⚠️ File failed to send.", "error")
 
-    db.close()
+    session_db.close()
     return redirect(url_for("user.view_chat", lead_id=lead_id))
 
 @user_bp.route("/lead/<int:lead_id>/update-status", methods=["POST"])
@@ -266,8 +266,8 @@ def update_lead_status(lead_id):
             flash(f"❌ Invalid status '{new_status}' received.", "error")
             return jsonify({"success": False, "message": "Invalid status."}), 400
 
-        db = SessionLocal()
-        lead = db.query(Lead).filter_by(id=lead_id).first()
+        session_db = db.session
+        lead = session_db.query(Lead).filter_by(id=lead_id).first()
 
         if not lead:
             flash("❌ Lead not found.", "error")
@@ -279,7 +279,7 @@ def update_lead_status(lead_id):
             return jsonify({"success": False, "message": "Permission denied."}), 403
 
         lead.status = new_status
-        db.commit()
+        session_db.commit()
         flash(f"✅ Lead status updated to {new_status}.", "success")
         return jsonify({"success": True, "message": "Status updated."})
 
@@ -290,27 +290,28 @@ def update_lead_status(lead_id):
 @user_bp.route("/main_dashboard")
 @login_required
 def main_dashboard():
-    db = SessionLocal()
+    session_db = db.session
     sales_rep_id = session.get("user_id")
-    leads = db.query(Lead).filter_by(sales_rep_id=sales_rep_id).all()
-    db.close()
+    leads = session_db.query(Lead).filter_by(sales_rep_id=sales_rep_id).all()
+    session_db.close()
     return render_template("user/base_chat.html", leads=leads, selected_lead=None, messages=[])
 
 @user_bp.route("/retry-message/<int:message_id>", methods=["POST"])
 @login_required
 def retry_failed_message(message_id):
     try:
-        db = SessionLocal()
+        db = current_app.extensions["sqlalchemy"].db
+        session_db = db.session
         data = request.get_json()
         content = data.get("content")
         message_type = data.get("message_type")
 
-        message = db.query(LeadMessage).filter_by(id=message_id).first()
+        message = session_db.query(LeadMessage).filter_by(id=message_id).first()
         if not message:
             flash("⚠️ Message not found.", "error")
             return jsonify({"success": False, "message": "Message not found."})
 
-        lead = db.query(Lead).filter_by(id=message.lead_id).first()
+        lead = session_db.query(Lead).filter_by(id=message.lead_id).first()
         if not lead:
             flash("⚠️ Lead not found.", "error")
             return jsonify({"success": False, "message": "Lead not found."})
@@ -324,7 +325,7 @@ def retry_failed_message(message_id):
         message.timestamp = datetime.utcnow()
         if response_data and isinstance(response_data, dict):
             message.platform_message_id = response_data.get("message_id")
-        db.commit()
+        session_db.commit()
 
         return jsonify({"success": True, "message": "Message resent."})
 
@@ -336,12 +337,12 @@ def retry_failed_message(message_id):
 @user_bp.route('/notifications/mark_read', methods=['POST'])
 @login_required
 def mark_notifications_read():
-    db = SessionLocal()
+    session_db = db.session
     try:
        
         user_id = session.get("user_id") 
 
-        notifications = db.query(Notification).join(Lead).join(SalesRep).filter(
+        notifications = session_db.query(Notification).join(Lead).join(SalesRep).filter(
             SalesRep.user_id == user_id,
             Notification.is_read == False
         ).all()
@@ -349,24 +350,24 @@ def mark_notifications_read():
         for notif in notifications:
             notif.is_read = True
 
-        db.commit()
+        session_db.commit()
         return jsonify(success=True)
     except Exception as e:
-        db.rollback()
+        session_db.rollback()
         print("Error in mark_notifications_read:", e)
         return jsonify(success=False, error=str(e)), 500
     finally:
-        db.close()
+        session_db.close()
 
 @user_bp.route("/notifications/unread")
 @login_required
 def unread_notifications():
-    db = SessionLocal()
+    session_db = db.session
     try:
         user_id = session.get("user_id")
 
         # 🔔 Unread Notifications
-        notifications = db.query(Notification).join(Lead).join(SalesRep).filter(
+        notifications = session_db.query(Notification).join(Lead).join(SalesRep).filter(
             SalesRep.user_id == user_id,
             Notification.is_read == False
         ).all()
@@ -380,14 +381,14 @@ def unread_notifications():
         ]
 
         # 💬 Unread Messages (used for Live Messaging badge)
-        messenger_msg_count = db.query(LeadMessage).join(Lead).join(SalesRep).filter(
+        messenger_msg_count = session_db.query(LeadMessage).join(Lead).join(SalesRep).filter(
             SalesRep.user_id == user_id,
             LeadMessage.is_read == False,
             LeadMessage.sender == "user",
             Lead.platform == "messenger"
         ).count()
 
-        instagram_msg_count = db.query(LeadMessage).join(Lead).join(SalesRep).filter(
+        instagram_msg_count = session_db.query(LeadMessage).join(Lead).join(SalesRep).filter(
             SalesRep.user_id == user_id,
             LeadMessage.is_read == False,
             LeadMessage.sender == "user",
@@ -404,4 +405,4 @@ def unread_notifications():
     except Exception as e:
         return jsonify(error=str(e)), 500
     finally:
-        db.close()
+        session_db.close()

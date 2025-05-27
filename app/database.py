@@ -1,15 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.models.models import Base
+
 from app.config import Config
+from flask_sqlalchemy import SQLAlchemy
 # Database configuration
 DATABASE_URL = Config.SQLALCHEMY_DATABASE_URI
-# Create the database engine
-
-engine = create_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+db = SQLAlchemy()
 
 # Create tables
-def init_db():
-    Base.metadata.create_all(bind=engine)
-
+def init_db(app):
+    app.config.from_object(Config)
+    db.init_app(app)

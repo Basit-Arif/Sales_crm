@@ -1,22 +1,30 @@
 # meeting_pipeline.py
 
-from datetime import datetime, timedelta
-import re
-import requests
-from dateutil import parser
-from collections import defaultdict
-from celery import Celery # type: ignore
-from app.models.models import Meeting,LeadMessage,Lead,LeadComment  # replace with your actual models
-from sqlalchemy.orm import scoped_session, sessionmaker
+from app.celery_worker import celery
+from app.models import db
+from app.models.models import Lead, LeadMessage, Meeting,LeadComment
 from sqlalchemy import func
-from app.database import SessionLocal
-import pytz # replace with your actual Flask app engine
+from datetime import datetime,timedelta
+import requests
+import pytz
+from dateutil import parser 
+from collections import defaultdict
+import re
+
+
+# replace with your actual Flask app engine
+
+
+
+
+# from app.services.task import celery
+
+
 
 # -----------------------------
 # Celery Setup
 # -----------------------------
-celery = Celery('tasks', broker='redis://localhost:6379/0')
-Session = SessionLocal()
+# celery = celery('tasks', broker='redis://localhost:6379/0')
 
 
 # -----------------------------
@@ -87,7 +95,7 @@ buffer = MessageBuffer()
 
 def detect_meeting_intent_local(lead_id: int, message_content: str):
     print("in detect")
-    session = SessionLocal()
+    session = db.session
     try:
         messages = (
             session.query(LeadMessage)
@@ -152,82 +160,49 @@ def detect_meeting_intent_task(lead_id, message_content):
 
 @celery.task(name="detect_meeting_intent")
 def detect_meeting_intent(lead_id: int, message_content: str):
-    session = SessionLocal()
-    try:
-        messages = (
-            session.query(LeadMessage)
-            .filter_by(lead_id=lead_id)
-            .order_by(LeadMessage.timestamp.desc())
-            .limit(3)
-            .all()
-        )
-        recent_texts = [m.content for m in reversed(messages) if m.message_type == "text"]
-        combined = " ".join(recent_texts)
+    from app import create_app
+    app = create_app()
+    session = db.session
+    with app.app_context():
+        try:
+            print(f"🎯 Task started for lead: {lead_id}")
+            print(f"session id: {session}")
+            messages = (
+                session.query(LeadMessage)
+                .filter_by(lead_id=lead_id)
+                .order_by(LeadMessage.timestamp.desc())
+                .limit(3)
+                .all()
+            )
+            text_msgs = [m.content for m in reversed(messages) if m.message_type == "text"]
+            combined = " ".join(text_msgs)
 
-        buffer.add_message(str(lead_id), message_content)
-        combined_message = buffer.get_combined_message(str(lead_id))
+            print("Combined text:", combined)
 
-        if not is_meeting_related(combined_message):
-            print("ℹ️ Message not flagged as meeting-related.")
-            return
+            # Fake detection
+            response = requests.post("http://localhost:8000/process", json={
+                "lead_message": combined,
+                "lead_id": lead_id
+            }, timeout=10)
 
-        print("📌 Message flagged for LLM processing:", combined_message)
+            result = response.json().get("response", {})
 
-        response = requests.post("http://localhost:8000/process", json={
-            "lead_message": combined_message,
-            "lead_id": lead_id
-        }, timeout=10)
-
-        if not response.ok:
-            print(f"❌ LLM API error: {response.status_code}")
-            return
-
-        result = response.json().get("response", {})
-        print("🧠 LLM Response:", result)
-
-        if result.get("meeting_intent") and result.get("confidence", 0) >= 0.8:
-            if not result.get("meeting_date") or not result.get("meeting_time"):
-                print("⚠️ Intent but missing time/date. Skipping.")
+            if not result.get("meeting_intent"):
                 return
+
+            local_naive = parser.parse(f"{result['meeting_date']} {result['meeting_time']}")
+            client_tz = pytz.timezone(result.get("timezone", "Asia/Karachi"))
+            localized = client_tz.localize(local_naive)
+            meeting_time_utc = localized.astimezone(pytz.utc)
 
             lead = session.query(Lead).get(lead_id)
             if not lead:
-                print("❌ Lead not found:", lead_id)
+                print("Lead not found")
                 return
 
-            try:
-                # Step 1: Parse as naive datetime
-                local_naive = parser.parse(f"{result['meeting_date']} {result['meeting_time']}")
-                
-                # Step 2: Get DST-aware timezone
-                client_tz = pytz.timezone(result["timezone"] or "US/Pacific")
-
-                # Step 3: Localize to client timezone (DST-aware)
-                localized_dt = client_tz.localize(local_naive)
-
-                # Step 4: Convert to UTC
-                meeting_time_utc = localized_dt.astimezone(pytz.utc)
-                meeting_date_only = meeting_time_utc.date()
-
-            except Exception as tz_err:
-                print("❌ Timezone parsing error:", tz_err)
-                return
-
-            # Step 5: Check for existing meeting
-            existing_meeting = (
-                session.query(Meeting)
-                .filter(Meeting.lead_id == lead_id)
-                .filter(func.date(Meeting.meeting_time_utc) == meeting_date_only)
-                .first()
-            )
-            if existing_meeting:
-                print(f"⚠️ Duplicate meeting on {meeting_date_only}. Skipping.")
-                buffer.clear(str(lead_id))
-                return
-
-            new_meeting = Meeting(
+            meeting = Meeting(
                 sales_rep_id=lead.sales_rep_id,
-                lead_id=lead_id,
+                lead_id=lead.id,
                 meeting_time_utc=meeting_time_utc,
                 client_timezone=result["timezone"],
                 rep_timezone="Asia/Karachi",
@@ -236,68 +211,100 @@ def detect_meeting_intent(lead_id: int, message_content: str):
                 detected_time_string=result["meeting_time"],
                 status="pending"
             )
-            session.add(new_meeting)
+            session.add(meeting)
             session.commit()
-            buffer.clear(str(lead_id))
-            print(f"✅ Meeting created: {new_meeting.id}")
-        else:
-            print("⚠️ LLM returned false intent or low confidence")
 
-    except Exception as e:
-        print("❌ Internal error:", str(e))
-        session.rollback()
-    finally:
-        session.close()
+            print("✅ Meeting saved")
+        except Exception as e:
+            print("❌ Internal error:", e)
+            session.rollback()
+        finally:
+            session.close()
+# @celery.task(name="detect_meeting_intent")
+# def detect_meeting_intent(lead_id: int, message_content: str):
+#     from app import create_app
+#     app = create_app()
+#     session = db.session
+#     with app.app_context():
+#         try:
+#             session = db.session
+#             print(f"🎯 Task started for lead: {lead_id}")
+#             lead = session.query(Lead).get(lead_id)
+#             print("Lead:", lead.name if lead else "Not found")
+#         except Exception as e:
+#             print("❌ Task error:", e)
+#             session.rollback()
+#         finally:
+#             session.close()
+    
+from pytz import timezone
 
 @celery.task(name="summarize_leads_for_date")
 def summarize_leads_for_date(lead_id: int, summary_date: str):
-    session = SessionLocal()
-    try:
-        date_obj = datetime.strptime(summary_date, "%Y-%m-%d").date()
-
-        messages = session.query(LeadMessage).filter(
-            LeadMessage.lead_id == lead_id,
-            func.date(LeadMessage.timestamp) == date_obj
-        ).order_by(LeadMessage.timestamp.asc()).all()
-
-        if not messages:
-            return
-
+    print('hello')
+    from app import create_app
+    app = create_app()
+    session = db.session
+    with app.app_context():
         try:
-            formatted_text = "\n".join(
-            f"{msg.timestamp.strftime('%H:%M')} ({msg.sender}): {msg.content}"
-            for msg in messages
-)
-            response = requests.post("http://localhost:8000/summarize", json={
-                "lead_id": lead_id,
-                "summary_date": summary_date,
-                "formatted_text": formatted_text
-            })
+            date_obj = datetime.strptime(summary_date, "%Y-%m-%d").date()
+            tz = timezone("Asia/Karachi")
+            start_of_day = tz.localize(datetime.combine(date_obj, datetime.min.time())).astimezone(pytz.utc)
+            end_of_day = tz.localize(datetime.combine(date_obj, datetime.max.time())).astimezone(pytz.utc)
 
-            if response.status_code == 200:
-                summary_output = response.json().get("summary")
-                session.merge(LeadComment(
-                    lead_id=lead_id,
-                    summary_date=date_obj,
-                    content=summary_output,  # ✅ corrected
-                    generated_by="gpt",
-                    created_at=datetime.utcnow()
-                ))
-            else:
-                print(f"❌ Failed for lead {lead_id}: Status {response.status_code}")
+            # Check the latest message timestamp
+            latest_msg = session.query(LeadMessage).filter_by(lead_id=lead_id).order_by(LeadMessage.timestamp.desc()).first()
+            if latest_msg and latest_msg.timestamp.replace(tzinfo=pytz.utc) > end_of_day:
+                print("⏩ Skipping summary: newer message exists after target summary date.")
+                return
+
+            messages = session.query(LeadMessage).filter(
+                LeadMessage.lead_id == lead_id,
+                LeadMessage.timestamp >= start_of_day,
+                LeadMessage.timestamp <= end_of_day
+            ).order_by(LeadMessage.timestamp.asc()).all()
+
+            if not messages:
+                print("⚠️ No messages found for this date. Skipping summarization.")
+                return
+            print(f"📅 Summarizing messages for lead {lead_id} on {summary_date}")
+
+            try:
+                formatted_text = "\n".join(
+                f"{msg.timestamp.strftime('%H:%M')} ({msg.sender}): {msg.content}"
+                for msg in messages
+                )
+                print("in this")              
+                response = requests.post("http://localhost:8000/summarize", json={
+                    "lead_id": lead_id,
+                    "summary_date": summary_date,
+                    "formatted_text": formatted_text
+                })
+
+                if response.status_code == 200:
+                    summary_output = response.json().get("summary")
+                    session.merge(LeadComment(
+                        lead_id=lead_id,
+                        summary_date=date_obj,
+                        content=summary_output,
+                        generated_by="gpt",
+                        created_at=datetime.now()
+                    ))
+                else:
+                    print(f"❌ Failed for lead {lead_id}: Status {response.status_code}")
+            except Exception as e:
+                print(f"❌ Request error for lead {lead_id}: {e}")
+
+            session.commit()
+            print(f"✅ Summarized lead {lead_id} for {summary_date}")
         except Exception as e:
-            print(f"❌ Request error for lead {lead_id}: {e}")
-
-        session.commit()
-        print(f"✅ Summarized lead {lead_id} for {summary_date}")
-    except Exception as e:
-        print("❌ Summarization batch failed:", e)
-        session.rollback()
-    finally:
-        session.close()
+            print("❌ Summarization batch failed:", e)
+            session.rollback()
+        finally:
+            session.close()
 # -----------------------------
 # Example
 # -----------------------------
-if __name__ == "__main__":
-    # detect_meeting_intent_local(3, "hey how are you")
-    detect_meeting_intent(3, "hey how are you")
+# if __name__ == "__main__":
+#     # detect_meeting_intent_local(3, "hey how are you")
+#     detect_meeting_intent(3, "hey how are you")

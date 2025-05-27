@@ -1,14 +1,14 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from functools import wraps
 from werkzeug.security import check_password_hash
-from app.database import SessionLocal
+from flask import current_app
 from app.models.models import User, SalesRep
 
 auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    db = SessionLocal()
+    db = current_app.extensions["sqlalchemy"].session
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]

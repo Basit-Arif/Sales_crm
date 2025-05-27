@@ -1,9 +1,8 @@
 from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session
+from flask import current_app
 
-
-
-from app.database import SessionLocal
 from app.models.models import Meeting, Lead, SalesRep
+from app.models import db
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
@@ -13,10 +12,14 @@ import pytz
 from flask import request
 
 
+def get_db():
+    return db.session
+
+
 meeting=Blueprint("meeting",__name__,url_prefix="/meeting")
 @meeting.route('/')
 def index():
-    db = SessionLocal()
+    db = get_db()
     current_user_id = session.get("user_id")
     ip_address = request.remote_addr
     print(f"ip_address{ip_address}")
@@ -34,7 +37,7 @@ def index():
 # Route to update meeting status
 @meeting.route('/update_status/<int:meeting_id>', methods=["POST"])
 def update_status(meeting_id):
-    db = SessionLocal()
+    db = get_db()
     try:
         new_status = request.form.get("status")
         meeting = db.query(Meeting).filter_by(id=meeting_id).first()
@@ -54,7 +57,7 @@ def update_status(meeting_id):
 # Route to create new meeting
 @meeting.route('/create', methods=["POST"])
 def create():
-    db = SessionLocal()
+    db = get_db()
     try:
         user_id = session.get("user_id")
         sales_rep = db.query(SalesRep).filter_by(user_id=user_id).first()
@@ -106,7 +109,7 @@ def create():
 
 @meeting.route('/edit/<int:meeting_id>', methods=["GET", "POST"])
 def edit(meeting_id):
-    db = SessionLocal()
+    db = get_db()
     try:
         meeting = db.query(Meeting).filter_by(id=meeting_id).first()
         if request.method == "POST":
@@ -152,7 +155,7 @@ def edit(meeting_id):
 # Route to mark meeting as complete and optionally create a follow-up
 @meeting.route("/complete/<int:meeting_id>", methods=["POST"])
 def complete(meeting_id):
-    db = SessionLocal()
+    db = get_db()
     try:
         meeting = db.query(Meeting).filter_by(id=meeting_id).first()
         if not meeting:
@@ -194,7 +197,7 @@ def complete(meeting_id):
 
 @meeting.route('/update_note/<int:meeting_id>', methods=["POST"])
 def update_note(meeting_id):
-    db = SessionLocal()
+    db = get_db()
     try:
         meeting = db.query(Meeting).filter_by(id=meeting_id).first()
         if meeting:

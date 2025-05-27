@@ -64,7 +64,7 @@
             <small>Rep: {{ meeting.rep_name }}</small>
           </div>
           
-          <span class="badge bg-info">{{ meeting.meeting_time.strftime('%b %d, %I:%M %p') }}</span>
+          <span class="badge bg-info">{{ meeting.meeting_time }}</span>
         </li>
         {% else %}
         <li class="list-group-item text-muted text-center">No upcoming meetings.</li>

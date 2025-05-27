@@ -1,13 +1,16 @@
-from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session
+from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session,current_app
 from app.models.models import Lead,SalesRep,Company,LeadMessage, Notification
 import os
 from app.services.massenger_services import get_user_name
 from app.services.lead_distribution_logic import get_next_sales_rep
 from dotenv import load_dotenv
-from app.database import SessionLocal
 from datetime import datetime
 from app import socketio
-from app.services.task import detect_meeting_intent_task,detect_meeting_intent
+from app.celery_worker import celery
+from app.services.task import detect_meeting_intent
+# 
+
+
 
 
 # Load environment variables
@@ -52,7 +55,8 @@ def handle_webhook():
                 # 🚫 Ignore system events
                 if "delivery" in event:
                     for mid in event["delivery"].get("mids", []):
-                        db = SessionLocal()
+                        db_instance = current_app.extensions['sqlalchemy']
+                        db = db_instance.session
                         msg = db.query(LeadMessage).filter_by(platform_message_id=mid).first()
                         if msg:
                             msg.status = "delivered"
@@ -67,13 +71,14 @@ def handle_webhook():
                 # 🔁 Handle read receipts
                 if "read" in event:
                     sender_id = event["sender"]["id"]
-                    db = SessionLocal()
+                    db_instance = current_app.extensions['sqlalchemy']
+                    db = db_instance.session
                     lead = db.query(Lead).filter_by(external_user_id=sender_id).first()
                     if lead:
                         messages = db.query(LeadMessage).filter_by(lead_id=lead.id, sender="rep", status="delivered").all()
                         for msg in messages:
                             msg.status = "read"
-                            msg.read_at = datetime.utcnow()
+                            msg.read_at = datetime.now()
                         db.commit()
                     db.close()
                     continue
@@ -127,7 +132,8 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
         return
 
     try:
-        db = SessionLocal()
+        db_instance = current_app.extensions['sqlalchemy']
+        db = db_instance.session
         lead = db.query(Lead).filter_by(external_user_id=sender_id).first()
 
         if not lead:
@@ -140,8 +146,8 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
                 message=content,  # Save first message content
                 sales_rep_id=assigned_rep.id,
                 ad_repr="Messenger",
-                assigned_at=datetime.utcnow(),
-                last_active_at=datetime.utcnow(),
+                assigned_at=datetime.now(),
+                last_active_at=datetime.now(),
                 status="active"
             )
             db.add(lead)
@@ -149,7 +155,7 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
             print("🆕 New lead created.")
 
         else:
-            lead.last_active_at = datetime.utcnow()
+            lead.last_active_at = datetime.now()
             db.commit()
 
         # Save message
@@ -163,7 +169,8 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
         )
         db.add(new_message)
         db.commit()
-        detect_meeting_intent.delay(lead.id, content)
+        print("before this")
+        detect_meeting_intent.delay(lead.id,content)
 
         room = f"user_{lead.sales_rep.user_id}" 
         print(f"this is {room}")
@@ -174,7 +181,7 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type)
             "content": content,
             "sender_name": lead.name,
             "message_type": message_type,
-            "timestamp": datetime.utcnow().strftime("%d %b %Y, %I:%M %p")
+            "timestamp": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }, to=room)
 
 
