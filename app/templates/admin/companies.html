@@ -1,0 +1,226 @@
+{% extends "admin/base_admin.html" %}
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Companies</h2>
+        <!-- Add Company Trigger Button -->
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCompanyModal">+ Add Company</button>
+    </div>
+
+    {% if companies %}
+    <table class="table table-bordered table-striped">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Messenger Page ID</th>
+                <th>Instagram Page ID</th>
+                <th>Messenger Token</th>
+                <th>Instagram Token</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for company in companies %}
+            <tr>
+                <td>{{ company.name }}</td>
+                <td>{{ company.messenger_page_id or '-' }}</td>
+                <td>{{ company.instagram_page_id or '-' }}</td>
+                <td>{{ company.messenger_access_token[:10] ~ '...' if company.messenger_access_token else '-' }}</td>
+                <td>{{ company.instagram_access_token[:10] ~ '...' if company.instagram_access_token else '-' }}</td>
+                <td>
+                    <button 
+                    class="btn btn-sm btn-warning"
+                    data-bs-toggle="modal"
+                    data-bs-target="#editCompanyModal"
+                    data-id="{{ company.id }}"
+                    data-name="{{ company.name }}"
+                    data-messenger-page-id="{{ company.messenger_page_id }}"
+                    data-messenger-access-token="{{ company.messenger_access_token }}"
+                    data-instagram-page-id="{{ company.instagram_page_id }}"
+                    data-instagram-access-token="{{ company.instagram_access_token }}"
+                  >
+                    Edit
+                  </button>
+                  <button class="btn btn-sm btn-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#deleteCompanyModal"
+                        data-id="{{ company.id }}"
+                        data-name="{{ company.name }}">
+                Delete
+                </button>
+                </td>
+                
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No companies found.</p>
+    {% endif %}
+</div>
+
+<!-- Add Company Modal -->
+<!-- Add Company Modal -->
+<div class="modal fade" id="addCompanyModal" tabindex="-1" aria-labelledby="addCompanyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <form method="POST" action="{{ url_for('admin.add_company') }}">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="addCompanyModalLabel">Add Company</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+  
+          <div class="modal-body">
+            <div class="mb-3">
+              <label for="companyName" class="form-label">Company Name</label>
+              <input type="text" class="form-control" name="name" id="companyName" required>
+            </div>
+  
+            <div class="mb-3">
+              <label for="messengerPageId" class="form-label">Messenger Page ID</label>
+              <input type="text" class="form-control" name="messenger_page_id" id="messengerPageId">
+            </div>
+  
+            <div class="mb-3">
+              <label for="messengerToken" class="form-label">Messenger Access Token</label>
+              <input type="text" class="form-control" name="messenger_access_token" id="messengerToken">
+            </div>
+  
+            <div class="mb-3">
+              <label for="instagramPageId" class="form-label">Instagram Page ID</label>
+              <input type="text" class="form-control" name="instagram_page_id" id="instagramPageId">
+            </div>
+  
+            <div class="mb-3">
+              <label for="instagramToken" class="form-label">Instagram Access Token</label>
+              <input type="text" class="form-control" name="instagram_access_token" id="instagramToken">
+            </div>
+          </div>
+  
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-success">Add</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+
+  <!-- Edit Company Modal -->
+  <div class="modal fade" id="editCompanyModal" tabindex="-1" aria-labelledby="editCompanyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="POST" id="editCompanyForm">
+          <div class="modal-header">
+            <h5 class="modal-title" id="editCompanyModalLabel">Edit Company</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="editCompanyId" name="company_id">
+  
+            <div class="mb-3">
+              <label class="form-label">Company Name</label>
+              <input type="text" class="form-control" id="editCompanyName" name="name" required>
+            </div>
+  
+            <div class="mb-3">
+              <label class="form-label">Messenger Page ID</label>
+              <input type="text" class="form-control" id="editMessengerPageId" name="messenger_page_id">
+            </div>
+  
+            <div class="mb-3">
+              <label class="form-label">Messenger Access Token</label>
+              <input type="text" class="form-control" id="editMessengerAccessToken" name="messenger_access_token">
+            </div>
+  
+            <div class="mb-3">
+              <label class="form-label">Instagram Page ID</label>
+              <input type="text" class="form-control" id="editInstagramPageId" name="instagram_page_id">
+            </div>
+  
+            <div class="mb-3">
+              <label class="form-label">Instagram Access Token</label>
+              <input type="text" class="form-control" id="editInstagramAccessToken" name="instagram_access_token">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-success">Save Changes</button>
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+    <!-- Delete Company Modal -->
+    <div class="modal fade" id="deleteCompanyModal" tabindex="-1" aria-labelledby="deleteCompanyModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+          <form method="POST" action="{{ url_for('admin.delete_company') }}">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Delete Company</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <div class="modal-body">
+                <p>Are you sure you want to delete <strong id="deleteCompanyName"></strong>?</p>
+                <p>This will unassign all leads from its sales reps. Please enter your admin password to proceed:</p>
+                <input type="hidden" name="company_id" id="deleteCompanyId">
+                <input type="password" class="form-control" name="admin_password" placeholder="Admin Password" required>
+              </div>
+              <div class="modal-footer">
+                <button type="submit" class="btn btn-danger">Delete</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+{% endblock %}
+
+{% block script %}
+
+    // Populate modal on edit click
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const editModalEl = document.getElementById("editCompanyModal");
+  const form = document.getElementById("editCompanyForm");
+
+  editModalEl.addEventListener("show.bs.modal", function (event) {
+    const button = event.relatedTarget;
+    if (!button) return;
+
+    const companyId = button.getAttribute("data-id");
+    const name = button.getAttribute("data-name");
+    const messengerPageId = button.getAttribute("data-messenger-page-id");
+    const messengerAccessToken = button.getAttribute("data-messenger-access-token");
+    const instagramPageId = button.getAttribute("data-instagram-page-id");
+    const instagramAccessToken = button.getAttribute("data-instagram-access-token");
+
+    document.getElementById("editCompanyId").value = companyId || "";
+    document.getElementById("editCompanyName").value = name || "";
+    document.getElementById("editMessengerPageId").value = messengerPageId || "";
+    document.getElementById("editMessengerAccessToken").value = messengerAccessToken || "";
+    document.getElementById("editInstagramPageId").value = instagramPageId || "";
+    document.getElementById("editInstagramAccessToken").value = instagramAccessToken || "";
+
+    form.action = `/admin/companies/edit/${companyId}`;
+  });
+});
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const modal = document.getElementById("deleteCompanyModal");
+      modal.addEventListener("show.bs.modal", function (event) {
+        const button = event.relatedTarget;
+        const companyId = button.getAttribute("data-id");
+        const companyName = button.getAttribute("data-name");
+  
+        document.getElementById("deleteCompanyId").value = companyId;
+        document.getElementById("deleteCompanyName").innerText = companyName;
+      });
+    });
+  </script>
+{% endblock %}

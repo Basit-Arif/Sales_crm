@@ -8,10 +8,6 @@ import pytz
 def local_now():
     return datetime.now(pytz.timezone("Asia/Karachi"))
 
-
-
-
-
 class Company(db.Model):
     __tablename__ = "companies"
 
@@ -20,6 +16,8 @@ class Company(db.Model):
     messenger_page_id = Column(String(100), unique=True, nullable=False)
     instagram_page_id = Column(String(100), unique=True, nullable=True)
     created_at = Column(DateTime, default=local_now)
+    messenger_access_token = db.Column(db.String(512))
+    instagram_access_token = db.Column(db.String(512))
 
     sales_reps = db.relationship("SalesRep", back_populates="company")
 

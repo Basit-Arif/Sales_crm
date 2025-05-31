@@ -14,11 +14,13 @@ def login():
         password = request.form["password"]
 
         user = db.query(User).filter_by(username=username).first()
-
+        
         if user and check_password_hash(user.password, password):
             session["user_id"] = user.id
             sales_rep = db.query(SalesRep).filter_by(user_id=session["user_id"]).first()
             session["sales_rep_id"] = sales_rep.id if sales_rep else None
+            print(f"User {session['user_id']} logged in")
+        
             session["is_admin"] = user.is_admin
             flash("✅ Login successful", "success")
             return redirect(url_for("admin.index") if user.is_admin else url_for("user.index"))

@@ -9,28 +9,57 @@ from app.models.models import LeadMessage
 load_dotenv()
 
 
-def get_user_name(psid: str) -> str | None:
+def get_user_name(psid: str, access_token: str) -> str | None:
     url = f"https://graph.facebook.com/{psid}"
     params = {
         "fields": "first_name,last_name",
-        "access_token": os.getenv("PAGE_ACCESS_TOKEN")
+        "access_token": access_token
     }
 
     response = requests.get(url, params=params)
     if response.status_code == 200:
         data = response.json()
-        first = data.get("first_name")
-        last = data.get("last_name")
-        return f"{first} {last}"
+        return f"{data.get('first_name', '')} {data.get('last_name', '')}".strip()
     else:
-        print("❌ Error fetching name:", response.text)
+        print("❌ Error fetching Messenger name:", response.text)
         return None
     
 
+def get_instagram_username(access_token):
+    # Step 1: Get list of pages
+    pages_url = f"https://graph.facebook.com/v19.0/me/accounts?access_token={access_token}"
+    pages_response = requests.get(pages_url)
+    pages_data = pages_response.json()
 
-def send_message(psid: str, text: str,lead_id: int,message_type="text"):
+    for page in pages_data.get('data', []):
+        page_id = page['id']
+        # Step 2: Get Instagram Business Account ID
+        ig_account_url = f"https://graph.facebook.com/v19.0/{page_id}?fields=instagram_business_account&access_token={access_token}"
+        ig_account_response = requests.get(ig_account_url)
+        ig_account_data = ig_account_response.json()
 
-    # 📝 Step 1: Save the message first with status = 'pending'
+        ig_business_account = ig_account_data.get('instagram_business_account')
+        if ig_business_account:
+            ig_user_id = ig_business_account['id']
+            # Step 3: Get Instagram Username
+            ig_user_url = f"https://graph.facebook.com/v19.0/{ig_user_id}?fields=username&access_token={access_token}"
+            ig_user_response = requests.get(ig_user_url)
+            ig_user_data = ig_user_response.json()
+            return ig_user_data.get('username')
+    return None
+    
+def get_lead_name(psid: str, platform: str, access_token: str) -> str | None:
+    if platform == "messenger":
+        return get_user_name(psid, access_token)
+    elif platform == "instagram":
+        return get_instagram_username(access_token)
+    else:
+        print("❌ Unknown platform for lead name fetch.")
+        return None
+
+
+def send_message(psid: str, text: str, lead_id: int, access_token:str, message_type="text", platform="messenger"):
+    # Step 1: Save message with pending status
     new_message = LeadMessage(
         lead_id=lead_id,
         sender="rep",
@@ -41,26 +70,37 @@ def send_message(psid: str, text: str,lead_id: int,message_type="text"):
         timestamp=local_now()
     )
     db.session.add(new_message)
-    db.session.commit()  # Commit to get the ID
+    db.session.commit()
 
-    # 🌐 Step 2: Try sending to Facebook
-    url = "https://graph.facebook.com/v17.0/me/messages"
-    headers = {
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "recipient": {"id": psid},
-        "message": {"text": text},
-        "messaging_type": "MESSAGE_TAG",
-        "tag": "HUMAN_AGENT"
-    }
-    params = {
-        "access_token": os.getenv("PAGE_ACCESS_TOKEN")
-    }
+    # Step 2: Send message based on platform
+    headers = {"Content-Type": "application/json"}
+    params = {"access_token": access_token}
+
+    if platform == "messenger":
+        url = "https://graph.facebook.com/v17.0/me/messages"
+        payload = {
+            "recipient": {"id": psid},
+            "message": {"text": text},
+            "messaging_type": "MESSAGE_TAG",
+            "tag": "HUMAN_AGENT"
+        }
+
+    elif platform == "instagram":
+        url = f"https://graph.instagram.com/v21.0/me/messages"
+        payload = {
+            "recipient": {"id": psid},
+            "message": {"text": text},
+            "messaging_type": "RESPONSE"
+        }
+
+    else:
+        print("❌ Unknown platform")
+        new_message.status = "failed"
+        db.session.commit()
+        return None
 
     response = requests.post(url, headers=headers, params=params, json=payload)
-    print("📤 Message sent:", response.text)
-    print("📡 Status Code:", response.status_code)
+    print("📤 Message response:", response.text)
 
     try:
         result = response.json()
@@ -70,7 +110,7 @@ def send_message(psid: str, text: str,lead_id: int,message_type="text"):
         else:
             new_message.status = "failed"
     except Exception as e:
-        print("❌ Error while processing Facebook response:", e)
+        print("❌ JSON decode error:", e)
         new_message.status = "failed"
 
     db.session.commit()

@@ -29,7 +29,7 @@ def index():
 
         # Lead filtering logic
         days_range = request.args.get("date_range", default=0, type=int)
-        filter_date = datetime.utcnow().date() - timedelta(days=days_range) if days_range else datetime.utcnow().date()
+        filter_date = datetime.now().date() - timedelta(days=days_range) if days_range else datetime.now().date()
 
         today_leads = session_db.query(Lead).filter(
             Lead.sales_rep_id == sales_rep.id,
@@ -99,15 +99,21 @@ def index():
 def dashboard():
     session_db = db.session
     user_id = session.get("user_id")
-    sales_rep_id = session_db.query(SalesRep).filter_by(user_id=user_id).first()
+    sales_rep = session_db.query(SalesRep).filter_by(user_id=user_id).first()
+    platform = request.args.get("platform", "messenger").lower()
 
-    if not sales_rep_id:
+    if not sales_rep:
         return "SalesRep not found for this user", 403
 
-    
-    print("-------sales_rep_id",sales_rep_id.id)
+    print("-------sales_rep_id", sales_rep.id)
 
-    leads = session_db.query(Lead).options(joinedload(Lead.messages)).filter_by(sales_rep_id=sales_rep_id.id).all()
+    leads_query = session_db.query(Lead).options(joinedload(Lead.messages)).filter_by(sales_rep_id=sales_rep.id)
+
+    # Filter by platform if provided
+    if platform in ["messenger", "instagram"]:
+        leads_query = leads_query.filter(Lead.platform == platform)
+
+    leads = leads_query.all()
 
     # Build list of dictionaries to avoid DetachedInstanceError
     processed_leads = []
@@ -117,18 +123,20 @@ def dashboard():
             'id': lead.id,
             'name': lead.name,
             'unread_count': unread_count,
-            'status': lead.status.lower() if lead.status else 'active'  # 🟢 add status here
+            'status': lead.status.lower() if lead.status else 'active'
         })
 
     session_db.close()
+    print("this is the platform name ")
+    print(platform)
 
     return render_template(
         "user/massenger_chat.html",
         leads=processed_leads,
         selected_lead=None,
-        messages=[]
+        messages=[],
+        platform=platform  # 🟢 Pass platform to template for conditional rendering if needed
     )
-
 
 
 @user_bp.route("/lead/<int:lead_id>")
@@ -136,12 +144,16 @@ def dashboard():
 def view_chat(lead_id):
     session_db = db.session
     user_id = session["user_id"]
+    platform = request.args.get("platform")
+
     sales_rep_id = session_db.query(SalesRep).filter_by(user_id=user_id).first()
+    if not sales_rep_id:
+        return "SalesRep not found", 403
 
-    # Preload all leads for sidebar
-    leads_query = session_db.query(Lead).options(joinedload(Lead.messages)).filter_by(sales_rep_id=sales_rep_id.id).all()
+    leads_query = session_db.query(Lead)\
+        .options(joinedload(Lead.messages))\
+        .filter_by(sales_rep_id=sales_rep_id.id, platform=platform).all()
 
-    # Pre-process sidebar leads
     processed_leads = []
     selected_lead_data = None
     selected_messages = []
@@ -150,7 +162,6 @@ def view_chat(lead_id):
         unread_count = sum(1 for msg in lead.messages if msg.sender == 'user' and not msg.is_read)
 
         if lead.id == lead_id:
-            # mark user messages as read
             read_ids = []
             for msg in lead.messages:
                 if msg.sender == 'user' and not msg.is_read:
@@ -161,10 +172,7 @@ def view_chat(lead_id):
             session_db.commit()
 
             if read_ids:
-                socketio.emit("message_read", {
-                    "lead_id": lead.id,
-                    "read_ids": read_ids
-                })
+                socketio.emit("message_read", {"lead_id": lead.id, "read_ids": read_ids})
 
             selected_lead_data = {
                 'id': lead.id,
@@ -197,10 +205,9 @@ def view_chat(lead_id):
         "user/massenger_chat.html",
         leads=processed_leads,
         selected_lead=selected_lead_data,
-        messages=selected_messages
+        messages=selected_messages,
+        platform=platform
     )
-
-
 
 import os
 from werkzeug.utils import secure_filename
@@ -211,46 +218,74 @@ import mimetypes
 @login_required
 def send_message_to_lead(lead_id):
     session_db = db.session
-    selected_lead = session_db.query(Lead).filter_by(id=lead_id).first()
+    lead = session_db.query(Lead).filter_by(id=lead_id).first()
 
-    if selected_lead:
-        text = request.form.get("message", "").strip()
-        if text:
-            status = send_message(
-                psid=selected_lead.external_user_id,
-                text=text,
-                lead_id=lead_id,
-                message_type="text"
-            )
+    if not lead:
+        flash("❌ Lead not found.", "error")
+        return redirect(url_for("user.dashboard"))
 
-            if status.status_code != 200:
-                print(f"❌ Failed to send message to {selected_lead.external_user_id}. Status Code: {status}")
-                flash("⚠️ Message failed to send. Please try again.", "error")
+    platform = lead.platform.lower()
 
-        uploaded_file = request.files.get("file")
-        if uploaded_file and uploaded_file.filename != "":
-            filename = secure_filename(uploaded_file.filename)
-            upload_folder = os.path.join(current_app.root_path, "static", "uploads")
-            os.makedirs(upload_folder, exist_ok=True)
-            filepath = os.path.join(upload_folder, filename)
-            uploaded_file.save(filepath)
+    # 🧠 Get access token from lead -> sales_rep -> company
+    company = lead.sales_rep.company
+    if not company:
+        flash("❌ No company linked to this lead's sales rep.", "error")
+        return redirect(url_for("user.dashboard"))
 
-            file_url = url_for("static", filename=f"uploads/{filename}", _external=True)
-            mime_type, _ = mimetypes.guess_type(filename)
-            message_type = "image" if mime_type and mime_type.startswith("image") else "file"
+    access_token = None
+    if platform == "messenger":
+        access_token = company.messenger_access_token
+    elif platform == "instagram":
+        access_token = company.instagram_access_token
 
-            status = send_message(
-                psid=selected_lead.external_user_id,
-                text=file_url,
-                lead_id=lead_id,
-                message_type=message_type
-            )
+    if not access_token:
+        flash(f"❌ No access token found for {platform} in company settings.", "error")
+        return redirect(url_for("user.dashboard"))
 
-            if status != 200:
-                flash("⚠️ File failed to send.", "error")
+    # 📝 Send text message
+    text = request.form.get("message", "").strip()
+    if text:
+        status = send_message(
+            psid=lead.external_user_id,
+            text=text,
+            lead_id=lead.id,
+            access_token=access_token,
+            message_type="text",
+            platform=platform,
+            
+        )
+        if status.status_code != 200:
+            flash("⚠️ Failed to send text message.", status.text,)
+
+    # 📎 Handle file attachment
+    uploaded_file = request.files.get("file")
+    if uploaded_file and uploaded_file.filename:
+        filename = secure_filename(uploaded_file.filename)
+        upload_path = os.path.join(current_app.root_path, "static", "uploads")
+        os.makedirs(upload_path, exist_ok=True)
+        file_path = os.path.join(upload_path, filename)
+        uploaded_file.save(file_path)
+
+        file_url = url_for("static", filename=f"uploads/{filename}", _external=True)
+        mime_type, _ = mimetypes.guess_type(filename)
+        message_type = "image" if mime_type and mime_type.startswith("image") else "file"
+
+        status = send_message(
+            psid=lead.external_user_id,
+            text=file_url,
+            lead_id=lead.id,
+            access_token=access_token,
+            message_type=message_type,
+            platform=platform,
+            
+        )
+        if status.status_code != 200:
+            flash("⚠️ Failed to send attachment.", "error")
+        lead_id = lead.id
+        platform = lead.platform
 
     session_db.close()
-    return redirect(url_for("user.view_chat", lead_id=lead_id))
+    return redirect(url_for("user.view_chat", lead_id=lead_id, platform=platform))
 
 @user_bp.route("/lead/<int:lead_id>/update-status", methods=["POST"])
 @login_required
@@ -364,6 +399,7 @@ def mark_notifications_read():
 def unread_notifications():
     session_db = db.session
     try:
+        
         user_id = session.get("user_id")
 
         # 🔔 Unread Notifications
