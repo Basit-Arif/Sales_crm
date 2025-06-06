@@ -387,11 +387,18 @@ def lead_detail(lead_id):
             .filter_by(lead_id=lead_id)\
             .order_by(LeadComment.summary_date.desc())\
             .all()
-        
+
         for comment in comments:
             comment.content_html = Markup(markdown.markdown(comment.content)) if comment.content else ""
 
-        return render_template("admin/lead_detail.html", lead=lead, comments=comments)
+        # Fetch all sales reps from the same company as this lead
+        sales_reps = []
+        if lead.sales_rep and lead.sales_rep.company:
+            sales_reps = db.query(SalesRep)\
+                .filter(SalesRep.company_id == lead.sales_rep.company_id)\
+                .all()
+
+        return render_template("admin/lead_detail.html", lead=lead, comments=comments, sales_reps=sales_reps)
 
     finally:
         db.close()
@@ -722,6 +729,42 @@ def delete_company():
         print("❌ Error deleting company:", e)
         flash("❌ Something went wrong. Operation cancelled.", "danger")
         return redirect(url_for("admin.list_companies"))
+
+    finally:
+        db.close()
+
+
+
+
+@admin_bp.route('/transfer-lead', methods=['POST'])
+def transfer_leads():
+    db = get_db()
+    try:
+        lead_id = request.form.get("lead_id")
+        new_sales_rep_id = request.form.get("new_sales_rep_id")
+
+        if not lead_id or not new_sales_rep_id:
+            flash("❌ Missing lead or sales rep.", "danger")
+            return redirect(request.referrer or url_for("admin.lead_overview"))
+
+        lead = db.query(Lead).filter_by(id=lead_id).first()
+        new_rep = db.query(SalesRep).filter_by(id=new_sales_rep_id).first()
+
+        if not lead or not new_rep:
+            flash("❌ Lead or sales rep not found.", "danger")
+            return redirect(request.referrer or url_for("admin.lead_overview"))
+
+        lead.sales_rep_id = new_rep.id
+        db.commit()
+
+        flash(f"✅ Lead '{lead.name}' successfully transferred to {new_rep.name}.", "success")
+        return redirect(url_for("admin.lead_detail", lead_id=lead.id))
+
+    except Exception as e:
+        db.rollback()
+        print("❌ Error transferring lead:", e)
+        flash("❌ Something went wrong. Transfer failed.", "danger")
+        return redirect(request.referrer or url_for("admin.lead_overview"))
 
     finally:
         db.close()

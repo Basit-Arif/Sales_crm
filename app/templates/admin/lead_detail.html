@@ -26,6 +26,9 @@
   <button class="btn btn-sm btn-outline-success mb-3" data-bs-toggle="modal" data-bs-target="#summaryModal">
     Add Summary
   </button>
+  <button class="btn btn-sm btn-outline-info mb-3" data-bs-toggle="modal" data-bs-target="#transferLeadModal">
+    Transfer Lead
+  </button>
 
   <!-- Summary Modal -->
   <div class="modal fade" id="summaryModal" tabindex="-1" aria-labelledby="summaryModalLabel" aria-hidden="true">
@@ -50,6 +53,33 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="submit" class="btn btn-success">Save Summary</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="modal fade" id="transferLeadModal" tabindex="-1" aria-labelledby="transferLeadModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form method="post" action="{{ url_for('admin.transfer_leads') }}">
+          <div class="modal-header">
+            <h5 class="modal-title" id="transferLeadModalLabel">Transfer Lead</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" name="lead_id" value="{{ lead.id }}">
+            <div class="mb-3">
+              <label for="new_sales_rep_id" class="form-label">Select Sales Rep</label>
+              <select class="form-select" name="new_sales_rep_id" required>
+                {% for rep in sales_reps %}
+                  <option value="{{ rep.id }}">{{ rep.name }} ({{ rep.company.name if rep.company else 'No Company' }})</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-info">Transfer</button>
           </div>
         </form>
       </div>

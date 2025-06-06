@@ -6,31 +6,30 @@
   <h3 class="mb-4">Leads Overview</h3>
 
   <table class="table table-bordered table-hover align-middle">
-    <thead class="table-light">
-        <tr>
-            <th>Name</th>
-            <th>Platform</th>
-            <th>Created</th>
-            <th>Status</th>
-            <th>Last Active</th>
-            <th>Comment</th>
-            <th>Actions</th>
-          </tr>
-      
+    <thead class="table-light text-center">
+      <tr>
+        <th>Name</th>
+        <th>Platform</th>
+        <th>Created</th>
+        <th>Status</th>
+        <th>Last Active</th>
+        <th>Comment</th>
+        <th>Actions</th>
+      </tr>
     </thead>
     <tbody>
       {% for lead in leads %}
       <tr>
         <td>
-            {{ lead.name }}
-            {% if lead.has_new_message_after_summary %}
-              <span class="ms-1 text-danger" title="New messages after summary"><i class="fas fa-circle" style="font-size: 0.6rem;"></i></span>
-            {% endif %}
-            {% if selected_company == 'all' and lead.sales_rep and lead.sales_rep.company %}
-              <br><small class="text-muted">({{ lead.sales_rep.company.name }})</small>
-            {% endif %}
+          {{ lead.name }}
+          {% if lead.has_new_message_after_summary %}
+            <span class="ms-1 text-danger" title="New messages after summary"><i class="fas fa-circle" style="font-size: 0.6rem;"></i></span>
+          {% endif %}
+          {% if selected_company == 'all' and lead.sales_rep and lead.sales_rep.company %}
+            <br><small class="text-muted">({{ lead.sales_rep.company.name }})</small>
+          {% endif %}
         </td>
-        <td><span class="badge bg-secondary text-uppercase">{{ lead.platform }}</span></td>
+        <td class="text-uppercase"><span class="badge bg-secondary">{{ lead.platform }}</span></td>
         <td>{{ lead.assigned_at.strftime('%b %d, %Y') if lead.assigned_at else 'N/A' }}</td>
         <td>
           <span class="badge 
@@ -57,8 +56,9 @@
             <span class="text-muted">Awaiting summary...</span>
           {% endif %}
         </td>
-        <td>
-          <a href="{{ url_for('admin.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-outline-primary">View</a>
+        <td class="text-center">
+          <a href="{{ url_for('admin.lead_detail', lead_id=lead.id) }}" class="btn btn-sm btn-outline-primary me-1">View</a>
+  
         </td>
       </tr>
       {% else %}

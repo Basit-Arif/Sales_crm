@@ -31,6 +31,7 @@ def handle_join_room(data):
     requested_id = int(data.get("user_id"))
     actual_id = session.get("user_id")
 
+
     if actual_id != requested_id:
         print(f"🚫 Unauthorized room join attempt: session {actual_id} tried to join user_{requested_id}")
         return
