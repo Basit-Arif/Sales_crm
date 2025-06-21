@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
+
 dependencies = [
+    "cryptography",
     "celery>=5.5.2",
     "dotenv>=0.9.9",
     "eventlet>=0.39.1",
-    "flask>=3.1.0",
+    "flask>=3.1.1",
     "flask-migrate>=4.1.0",
     "flask-socketio>=5.5.1",
     "flask-sqlalchemy>=3.1.1",
@@ -21,6 +23,19 @@ dependencies = [
     "pytz>=2025.2",
     "redis>=6.0.0",
     "requests>=2.32.3",
-    "socketio>=0.2.1",
     "sqlalchemy>=2.0.40",
+    "pytest>=8.4.0",
+    "pytest-env>=1.1.5",
+    "flask-mail>=0.10.0",
+    "pip>=25.1.1",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+env = [
+    "TEST_DATABASE_URL=mysql+pymysql://root:basit456@localhost/sales_crm_test"
+]
+markers = [
+    "integration=mark test as integration"
+]
+

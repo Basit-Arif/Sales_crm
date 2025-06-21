@@ -278,6 +278,7 @@ def api_kpi_summary():
 
 @admin_bp.route("/leads/overview")
 def leads_overview():
+    
     db = get_db()
     try:
         company_filter = request.args.get("company", "all")
@@ -345,6 +346,9 @@ def leads_overview():
             # Trigger summary only if no GPT comment exists after latest message
             if latest_msg_time and not filtered_comments:
                 print(f"🔁 Triggering summary for lead {lead.id} on {last_active_date}")
+                # Ensure last_active_date is a datetime.date, not a str
+                if isinstance(last_active_date, str):
+                    last_active_date = datetime.strptime(last_active_date, "%Y-%m-%d").date()
                 summarize_leads_for_date.delay(lead.id, str(last_active_date))
 
             # Attach comment to lead for UI
@@ -365,6 +369,7 @@ def leads_overview():
         )
 
     except Exception as e:
+        print(f"error int this leads overview {e}")
         traceback.print_exc()
         return "Server Error", 500
     finally:

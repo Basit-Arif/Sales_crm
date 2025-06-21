@@ -6,10 +6,8 @@ from app.config import Config
 from flask_socketio import SocketIO
 from app.models import db
 from flask_wtf.csrf import generate_csrf
-
-
-
-
+from app.config import Config
+from app.extension import db, migrate, socketio,mail
 from app.models.models import User, SalesRep, Company,Lead,Meeting
 
 # Register Flask-Migrate
@@ -26,15 +24,28 @@ def get_db():
 socketio = SocketIO(cors_allowed_origins="*")
 
 
-def create_app():
+def create_app(config_class=Config):
+    import os 
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     app = Flask(__name__)
    
     app.secret_key = 'basitarif234'
-    app.config.from_object(Config)
+    app.config.from_object(config_class)
+
+    app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+    app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
+    app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True') == 'True'
+    app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')  # ✅ sender email from .env
+    app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
 
     db.init_app(app)
     socketio.init_app(app)
     migrate.init_app(app, db)
+    mail.init_app(app)
+    
 
     with app.app_context():
         from app.routes.massenger import massenger_bp
@@ -43,9 +54,8 @@ def create_app():
         from app.routes.admin_dashboard.admin import admin_bp
         from app.routes.auth import auth_bp
         from app.routes.user_dashboard.meeting import meeting
-        from app.celery_worker import init_celery
         
-        init_celery(app)
+        
         app.register_blueprint(massenger_bp)
         app.register_blueprint(webhook_bp)
         app.register_blueprint(user_bp)
@@ -56,14 +66,25 @@ def create_app():
 
         from flask_migrate import upgrade
         import os
+        from app.seed_data_company import safe_seed_data
+        print("🔗 Connected to DB:", app.config["SQLALCHEMY_DATABASE_URI"])
+        # safe_seed_data()
 
         # ✅ Auto-upgrade the database if running locally
-        if os.environ.get("FLASK_ENV") == "development":
+        
+        env = os.environ.get("FLASK_ENV", "").lower()
+        print(env)
+
+        # Check explicitly for 'pytest' or testing config
+        if env == "development" and not app.config.get("testing", False):
             try:
                 upgrade()
                 print("🔄 Database auto-upgraded via Flask-Migrate")
             except Exception as e:
+                upgrade()
                 print("⚠️ Failed to auto-upgrade the database:", str(e))
+        else:
+            print("🧪 Skipping auto-upgrade (testing or other environment).")
         
         @app.context_processor
         def inject_csrf_token():
@@ -82,7 +103,7 @@ def create_app():
         db_session = g.pop("db", None)
         if db_session is not None:
             db_session.close()
-        
+    
     
 
     return app

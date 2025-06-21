@@ -1,25 +1,80 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login | Sales CRM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
 </head>
-<body>
-    <h2>Login</h2>
-<form method="POST">
-  <label>Username:</label><br>
-  <input type="text" name="username" required><br><br>
 
-  <label>Password:</label><br>
-  <input type="password" name="password" required><br><br>
+<body style="background:#f7f7f7; height: 100vh; display: flex; align-items: center; justify-content: center;">
 
-  <button type="submit">Login</button>
-</form>
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% for category, message in messages %}
-    <p class="{{ category }}">{{ message }}</p>
-  {% endfor %}
-{% endwith %}
+  <!-- Flash Messages -->
+  <div class="position-absolute" style="top: 20px; width: 100%; max-width: 400px;">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+  </div>
+
+  <!-- Login Card -->
+  <div class="card p-4 shadow-sm" style="width: 100%; max-width: 400px;">
+    <h3 class="text-center mb-4">Login</h3>
+
+    <form method="POST">
+      <div class="form-group">
+        <label>Username:</label>
+        <input type="text" name="username" class="form-control" required />
+      </div>
+
+      <div class="form-group">
+        <label>Password:</label>
+        <input type="password" name="password" class="form-control" required />
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block">Login</button>
+
+      <div class="text-right mt-2">
+        <button type="button" class="btn btn-link p-0" data-toggle="modal" data-target="#forgotModal">
+          Forgot Password?
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Forgot Password Modal -->
+  <div class="modal fade" id="forgotModal" tabindex="-1" role="dialog" aria-labelledby="forgotModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <form method="POST" action="{{ url_for('auth.forgot_password') }}">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="forgotModalLabel">Reset Password</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p>Enter your registered email and we'll send you a reset link.</p>
+            <input type="text" name="email" class="form-control" placeholder="Enter your email" required>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Send Reset Link</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

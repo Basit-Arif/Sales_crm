@@ -1,35 +1,20 @@
-from database import SessionLocal
-from models.models import Company, SalesRep
 
-def seed_company_and_sales_rep():
-    db = SessionLocal()
 
-    try:
-        # Create company
-        company = Company(
-            name="PowerPlus",
-            messenger_page_id="245737865859808",
-            instagram_page_id=None
-        )
-        db.add(company)
-        db.flush()  # Get company.id before committing
+from werkzeug.security import generate_password_hash
+from app.models.models import User, ReminderPurpose,db
 
-        # Create sales rep assigned to the company
-        sales_rep = SalesRep(
-            code="YASEEN001",
-            name="Yaseen Arif",
-            phone_number="03009266997",
-            company_id=company.id
-        )
-        db.add(sales_rep)
+def safe_seed_data():
+    # Seed admin user if not exists
+    if not User.query.filter_by(username="admin").first():
+        admin = User(username="admin", password=generate_password_hash("123admin"),email="admin@gmail.com")
+        db.session.add(admin)
 
-        db.commit()
-        print("✅ Seed successful: PowerPlus + Yaseen Arif")
-    except Exception as e:
-        db.rollback()
-        print("❌ Error:", str(e))
-    finally:
-        db.close()
+    # Seed reminder purposes if not exists
+    for purpose in ["Meeting", "Follow-up"]:
+        if not ReminderPurpose.query.filter_by(name=purpose).first():
+            db.session.add(ReminderPurpose(name=purpose))
+
+    db.session.commit()
 
 if __name__ == "__main__":
-    seed_company_and_sales_rep()
+    safe_seed_data()

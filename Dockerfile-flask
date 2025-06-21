@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+  build-essential gcc libffi-dev libssl-dev python3-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+RUN pip install uv
+RUN uv sync
+
+CMD ["uv", "run", "run.py"]

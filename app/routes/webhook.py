@@ -6,7 +6,7 @@ from app.services.lead_distribution_logic import get_next_sales_rep
 from dotenv import load_dotenv
 from datetime import datetime
 from app import socketio
-from app.celery_worker import celery
+from app.celery_app import celery
 from app.services.task import detect_meeting_intent
 # 
 

@@ -1,11 +1,18 @@
-from app import create_app, socketio # Don't import `app` here
+from app import create_app, socketio ,db
+from app.celery_app import make_celery
+ # Don't import `app` here
 from app.database import init_db
 from flask_socketio import join_room, leave_room
 from flask import session
 from flask_migrate import Migrate
+from app.services.helper_function import send_reset_email
 
 app = create_app()
-migrate = Migrate(app, init_db)  # ✅ Now `app` exists
+
+
+migrate = Migrate(app, init_db)
+make_celery(app=app)
+
 
 @socketio.on('connect')
 def handle_connect():
@@ -40,5 +47,14 @@ def handle_join_room(data):
     join_room(room)
     print(f"✅ User {actual_id} joined room {room}")
 
+@app.route('/test-mail')
+def test_mail():
+    send_reset_email("basitarif235@gmail.com", "http://dummy-link.com/reset")
+    return "✅ Mail sent if configuration is correct"
+
 if __name__ == "__main__":
-    socketio.run(app, debug=True, port=5005)
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    port = int(os.getenv("PORT", 5005))
+    socketio.run(app, debug=True,host="0.0.0.0",port=port)

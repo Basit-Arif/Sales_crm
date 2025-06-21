@@ -1,0 +1,15 @@
+# Ignore virtual env
+.venv
+
+# Ignore Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore build artifacts
+build/
+dist/
+wheels/
+*.egg-info
+

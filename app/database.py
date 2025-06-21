@@ -1,13 +1,5 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from app.models import db
 
-from app.config import Config
-from flask_sqlalchemy import SQLAlchemy
-# Database configuration
-DATABASE_URL = Config.SQLALCHEMY_DATABASE_URI
-db = SQLAlchemy()
-
-# Create tables
+# Optional seed or init logic
 def init_db(app):
-    app.config.from_object(Config)
     db.init_app(app)

@@ -1,7 +1,8 @@
 # meeting_pipeline.py
 
-from app.celery_worker import celery
-from app.models import db
+# from app.celery_worker import celery
+from app.celery_app import celery
+from app.extension import db
 from app.models.models import Lead, LeadMessage, Meeting,LeadComment
 from sqlalchemy import func
 from datetime import datetime,timedelta
@@ -10,6 +11,7 @@ import pytz
 from dateutil import parser 
 from collections import defaultdict
 import re
+from app.services.whatsapp_services import send_meeting_reminder_function
 
 
 # replace with your actual Flask app engine
@@ -243,6 +245,9 @@ from pytz import timezone
 def summarize_leads_for_date(lead_id: int, summary_date: str):
     print('hello')
     from app import create_app
+        
+    from pytz import timezone
+    print("hello")
     app = create_app()
     session = db.session
     with app.app_context():
@@ -254,7 +259,7 @@ def summarize_leads_for_date(lead_id: int, summary_date: str):
 
             # Check the latest message timestamp
             latest_msg = session.query(LeadMessage).filter_by(lead_id=lead_id).order_by(LeadMessage.timestamp.desc()).first()
-            if latest_msg and latest_msg.timestamp.replace(tzinfo=pytz.utc) > end_of_day:
+            if latest_msg and latest_msg.timestamp.astimezone(pytz.utc) > end_of_day:
                 print("⏩ Skipping summary: newer message exists after target summary date.")
                 return
 
@@ -308,3 +313,76 @@ def summarize_leads_for_date(lead_id: int, summary_date: str):
 # if __name__ == "__main__":
 #     # detect_meeting_intent_local(3, "hey how are you")
 #     detect_meeting_intent(3, "hey how are you")
+
+
+
+
+
+# app/services/task.py
+
+
+
+from datetime import datetime, timezone
+import pytz
+from app.models import db
+from app.models.models import ReminderLog, Lead, Meeting
+from app.services.whatsapp_services import send_meeting_reminder_function
+
+@celery.task(name="send_whatsapp_reminder")
+def send_whatsapp_reminder(reminder_id):
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        reminder = db.session.get(ReminderLog, reminder_id)
+        if not reminder:
+            logger.warning(f"⚠️ Reminder {reminder_id} not found.")
+            return
+
+        lead = db.session.get(Lead, reminder.lead_id)
+        if not lead or not lead.sales_rep or not lead.sales_rep.phone_number:
+            reminder.status = "failed"
+            db.session.commit()
+            return
+
+        meeting = db.session.query(Meeting).filter_by(lead_id=lead.id).order_by(Meeting.meeting_time_utc.desc()).first()
+        if not meeting:
+            reminder.status = "failed"
+            db.session.commit()
+            return
+
+        # ✅ helper to ensure meeting_time is aware
+        def make_aware(dt):
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+        meeting_time = make_aware(meeting.meeting_time_utc)
+        now_utc = datetime.now(timezone.utc)
+
+        minutes_left = int((meeting_time - now_utc).total_seconds() // 60)
+        rep_tz = pytz.timezone(lead.sales_rep.timezone or "Asia/Karachi")
+
+        # ✅ SAFE conversion - no localize anymore
+        local_meeting_time = meeting_time.astimezone(rep_tz)
+        time_str = local_meeting_time.strftime("%I:%M %p")
+        timezone_str = rep_tz.zone
+
+        response_json = send_meeting_reminder_function(
+            rep_phone=lead.sales_rep.phone_number,
+            rep_name=lead.sales_rep.name,
+            lead_name=lead.name,
+            time_str=time_str,
+            timezone_str=timezone_str,
+            minutes_left=minutes_left
+        )
+
+        if 'error' not in response_json:
+            reminder.status = "sent"
+        else:
+            reminder.status = "failed"
+            reminder.retry_count += 1
+
+        db.session.commit()
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"🔥 CRITICAL ERROR during reminder {reminder_id}: {str(e)}", exc_info=True)

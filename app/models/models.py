@@ -29,6 +29,7 @@ class User(db.Model):
     username = Column(String(50), unique=True, nullable=False)
     password = Column(String(255), nullable=False)  # hashed password
     is_admin = Column(Boolean, default=False)
+    email = Column(db.String(120), unique=True, nullable=True)
 
     sales_rep = db.relationship("SalesRep", back_populates="user", uselist=False)
 
@@ -50,6 +51,7 @@ class SalesRep(db.Model):
     company = db.relationship("Company", back_populates="sales_reps")
     user = db.relationship("User", back_populates="sales_rep")
     leads = db.relationship("Lead", back_populates="sales_rep")
+    timezone = Column(String(50), default="Asia/Karachi")
 
 
 class Lead(db.Model):
@@ -141,3 +143,25 @@ class LeadComment(db.Model):
 
 
     lead = db.relationship("Lead", backref="comments")
+
+
+
+class ReminderPurpose(db.Model):
+    __tablename__ = "reminder_purpose"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+
+
+
+class ReminderLog(db.Model):
+    __tablename__ = "reminder_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    lead_id = db.Column(db.Integer, db.ForeignKey("leads.id"), nullable=False)
+    purpose_id = db.Column(db.Integer, db.ForeignKey("reminder_purpose.id"), nullable=False)
+    scheduled_for = db.Column(db.DateTime, nullable=False)
+    status = db.Column(db.String(20), default="pending")
+    retry_count = db.Column(db.Integer, default=0)
+
+    lead = db.relationship("Lead", backref="reminder_logs")
+    purpose = db.relationship("ReminderPurpose", backref="reminders")

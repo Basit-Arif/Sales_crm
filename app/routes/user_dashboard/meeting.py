@@ -1,4 +1,4 @@
-from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session
+from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session,g
 from flask import current_app
 
 from app.models.models import Meeting, Lead, SalesRep
@@ -10,13 +10,21 @@ from datetime import datetime
 from sqlalchemy import func
 import pytz
 from flask import request
+from app.services.meeting import schedule_pre_meeting_reminders
+from app import db 
 
 
-def get_db():
-    return db.session
+
+
 
 
 meeting=Blueprint("meeting",__name__,url_prefix="/meeting")
+def get_db():
+    if 'db' not in g:
+        g.db = db.session
+    return g.db
+
+
 @meeting.route('/')
 def index():
     db = get_db()
@@ -40,18 +48,44 @@ def update_status(meeting_id):
     db = get_db()
     try:
         new_status = request.form.get("status")
+        print("this is status:", new_status)
+
         meeting = db.query(Meeting).filter_by(id=meeting_id).first()
-        if meeting:
-            meeting.status = new_status
-            meeting.updated_at = datetime.utcnow()
-            db.commit()
-            flash(f"Meeting {meeting_id} status updated to {new_status}", "success")
-        else:
+        if not meeting:
             flash("Meeting not found", "danger")
+            return redirect(url_for("meeting.index"))
+
+        meeting.status = new_status
+        meeting.updated_at = datetime.utcnow()
+
+        # ✅ Only trigger if status is confirmed
+        if new_status.lower() in ["confirmed", "confirm"]:
+            now_utc = datetime.utcnow()
+
+            # 🛡️ Ensure meeting_time_utc is timezone-aware
+            meeting_time = meeting.meeting_time_utc
+
+            if meeting_time.tzinfo is None:
+                # Treat stored datetime as UTC if it's naive
+                meeting_time = pytz.utc.localize(meeting_time)
+            else:
+                meeting_time = meeting_time.astimezone(pytz.utc)
+
+            if meeting_time > pytz.utc.localize(now_utc):
+                print("⏰ Scheduling pre-meeting reminders")
+                response = schedule_pre_meeting_reminders(meeting.lead, meeting_time, db)
+                print(response)
+            else:
+                print("⚠️ Meeting time already passed; skipping reminder.")
+
+        db.commit()
+        flash(f"Meeting {meeting_id} status updated to {new_status}", "success")
     except Exception as e:
+        db.rollback()
         flash(f"Error updating meeting: {str(e)}", "danger")
     finally:
         db.close()
+
     return redirect(url_for("meeting.index"))
 
 # Route to create new meeting
@@ -95,8 +129,8 @@ def create():
             detected_time_string=time_str,
             detected_date_string=date_str,
             status="pending",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+            created_at=datetime.now(),
+            updated_at=datetime.now()
         )
         db.add(new_meeting)
         db.commit()
