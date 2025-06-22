@@ -84,6 +84,9 @@
   <div class="chat-wrapper">
     <div class="chat-header d-flex justify-content-between align-items-center mb-4">
       <h5 class="mb-0">Chat with {{ selected_lead.name }}</h5>
+      <button type="button" class="btn btn-sm btn-outline-secondary mr-2" data-toggle="modal" data-target="#addCommentModal">
+        💬 Add Comment
+      </button>
       <div>
         <select class="form-control form-control-sm lead-status-dropdown"
                 data-lead-id="{{ selected_lead.id }}"
@@ -173,6 +176,30 @@
       </div>
     </div>
   </div>
+  {% if selected_lead %}
+  <div class="modal fade" id="addCommentModal" tabindex="-1" role="dialog" aria-labelledby="addCommentLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <form method="POST" action="{{ url_for('user.add_lead_comment', lead_id=selected_lead.id) }}">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="addCommentLabel">Add Comment for {{ selected_lead.name }}</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <div class="modal-body">
+            <textarea name="content" class="form-control" rows="4" placeholder="Write your comment..." required></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Save Comment</button>
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endif %}
+  
 {% endblock %}
 {% block scripts %}
 

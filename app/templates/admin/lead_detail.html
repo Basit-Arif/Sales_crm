@@ -86,16 +86,24 @@
     </div>
   </div>
 
-  <ul class="list-group">
+  <div class="timeline mt-4">
     {% for c in comments %}
-    <li class="list-group-item">
-      <strong>{{ c.summary_date.strftime('%A, %b %d') }}</strong><br>
-      <span class="text-muted fst-italic small">{{ c.generated_by }}</span><br>
-      {{ c.content_html }}
-    </li>
+      <div class="card mb-3 shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0 text-primary">{{ c.summary_date.strftime('%A, %b %d, %Y') }}</h6>
+            <span class="badge 
+              {% if c.generated_by == 'admin' %}bg-primary
+              {% elif c.generated_by in ['sales_rep', 'user'] %}bg-success
+              {% else %}bg-secondary{% endif %}">
+              {{ c.generated_by|capitalize }}
+            </span>
+          </div>
+          <p class="mb-0" style="white-space: pre-line;">{{ c.content_html | safe }}</p>
+        </div>
+      </div>
     {% else %}
-    <li class="list-group-item text-muted text-center">No summaries found.</li>
+      <div class="alert alert-warning text-center mt-3">No summaries found for this lead.</div>
     {% endfor %}
-  </ul>
-</div>
+  </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 from flask import Flask,Blueprint,render_template,url_for,redirect,jsonify,request,flash,session,current_app
 from app.routes.auth import login_required
-from app.models.models import Lead,LeadMessage,SalesRep,Notification,Meeting
+from app.models.models import Lead,LeadMessage,SalesRep,Notification,Meeting,LeadComment
 from app.models import db
 from app.services.massenger_services import send_message
 from sqlalchemy.orm import joinedload
@@ -16,8 +16,6 @@ user_bp=Blueprint("user",__name__,url_prefix="/user")
 @user_bp.route('/')
 @login_required
 def index():
-
-
     session_db = db.session
     try:
         user_id = session.get("user_id")
@@ -440,5 +438,68 @@ def unread_notifications():
 
     except Exception as e:
         return jsonify(error=str(e)), 500
+    finally:
+        session_db.close()
+
+
+
+@user_bp.route("/all-leads")
+@login_required
+def all_leads():
+    session_db = db.session
+    try:
+        leads = session_db.query(Lead).order_by(Lead.id.desc()).all()
+        return render_template("user/all_leads.html", leads=leads)
+    finally:
+        session_db.close()
+
+
+@user_bp.route("/lead/<int:lead_id>/add-comment", methods=["POST"])
+def add_lead_comment(lead_id):
+    session_db = db.session
+    try:
+        content = request.form.get("content")
+
+        if not content:
+            flash("Comment cannot be empty.", "danger")
+            return redirect(request.referrer)
+
+        comment = LeadComment(
+            lead_id=lead_id,
+            content=content,
+            summary_date=datetime.now(pytz.timezone("Asia/Karachi")),
+            generated_by="user",
+        )
+        session_db.add(comment)
+        session_db.commit()
+
+        flash("✅ Comment added successfully!", "success")
+        return redirect(request.referrer)
+
+    except Exception as e:
+        session_db.rollback()
+        print("❌ Error adding comment:", e)
+        flash("❌ Something went wrong while adding the comment.", "danger")
+        return redirect(request.referrer)
+    finally:
+        session_db.close()
+
+
+@user_bp.route("/lead/<int:lead_id>/comments")
+@login_required
+def view_lead_comments(lead_id):
+    session_db = db.session
+    try:
+        lead = session_db.query(Lead).filter_by(id=lead_id).first()
+        if not lead:
+            flash("❌ Lead not found.", "error")
+            return redirect(url_for("user.dashboard"))
+
+        comments = session_db.query(LeadComment).filter(
+            LeadComment.lead_id == lead_id,
+            LeadComment.generated_by.in_(["admin", "user", "sales_rep"])
+        ).order_by(LeadComment.created_at.desc()).all()
+
+        return render_template("user/view_lead_comments.html", lead=lead, comments=comments)
     finally:
         session_db.close()

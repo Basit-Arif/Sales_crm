@@ -108,7 +108,9 @@
           </div>
         </div>
         <a href="{{ url_for('meeting.index') }}" class="{% if request.endpoint == 'meeting.index' %}active-link{% endif %}"><i class="fas fa-handshake"></i> Meetings</a>
-        
+        <a href="{{ url_for('user.all_leads') }}" class="{% if request.endpoint == 'user.all_leads' %}active-link{% endif %}">
+          <i class="fas fa-address-book"></i> All Leads
+        </a>
       </nav>
       <main class="offset-md-2 col-md-10 py-0" style="max-height: calc(100vh - 56px); overflow-y: auto;">
         <div class="bg-light text-center py-1" style="font-size: 0.85rem; border-bottom: 1px solid #ccc;">
@@ -393,6 +395,21 @@ document.addEventListener("DOMContentLoaded", function () {
     setInterval(updateClocks, 1000);
     updateClocks();
   });
+  </script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Sidebar dropdown manual toggle
+      const dropdownToggle = document.getElementById("messagingDropdown");
+      if (dropdownToggle) {
+        dropdownToggle.addEventListener("click", function (e) {
+          e.preventDefault();
+          const dropdownMenu = document.getElementById("sidebar-msg-dropdown");
+          if (dropdownMenu) {
+            dropdownMenu.classList.toggle("show");
+          }
+        });
+      }
+    });
   </script>
   {% block scripts %}
 

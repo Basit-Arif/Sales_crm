@@ -1,0 +1,32 @@
+{% extends 'user/base_chat.html' %}
+
+{% block content %}
+<h3 class="mb-3">📋 All Leads</h3>
+
+<table class="table table-bordered table-hover">
+  <thead class="thead-dark">
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Platform</th>
+      <th>Status</th>
+      <th>Assigned At</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for lead in leads %}
+    <tr>
+      <td>{{ lead.id }}</td>
+      <td>{{ lead.name }}</td>
+      <td>{{ lead.platform }}</td>
+      <td>{{ lead.status }}</td>
+      <td>{{ lead.assigned_at.strftime("%Y-%m-%d %H:%M") if lead.assigned_at else "—" }}</td>
+      <td>
+        <a href="{{ url_for('user.view_lead_comments', lead_id=lead.id) }}" class="btn btn-sm btn-primary">💬 View Comments</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

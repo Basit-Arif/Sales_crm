@@ -388,10 +388,15 @@ def lead_detail(lead_id):
         if not lead:
             return "Lead not found", 404
 
-        comments = db.query(LeadComment)\
-            .filter_by(lead_id=lead_id)\
-            .order_by(LeadComment.summary_date.desc())\
+        comments = (
+            db.query(LeadComment)
+            .filter(
+                LeadComment.lead_id == lead_id,
+                LeadComment.generated_by.in_(["admin", "user", "sales_rep", "gpt"])
+            )
+            .order_by(LeadComment.summary_date.desc(), LeadComment.created_at.desc())
             .all()
+        )
 
         for comment in comments:
             comment.content_html = Markup(markdown.markdown(comment.content)) if comment.content else ""
@@ -421,15 +426,7 @@ def add_lead_summary():
             flash("All fields are required.", "danger")
             return redirect(url_for("admin.lead_detail", lead_id=lead_id))
 
-        # Prevent duplicate summary for same date
-        existing = db.query(LeadComment).filter_by(
-            lead_id=lead_id,
-            summary_date=summary_date
-        ).first()
-
-        if existing:
-            flash("A summary for this date already exists.", "warning")
-            return redirect(url_for("admin.lead_detail", lead_id=lead_id))
+        
 
         comment = LeadComment(
             lead_id=lead_id,

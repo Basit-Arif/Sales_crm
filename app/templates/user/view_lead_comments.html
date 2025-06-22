@@ -1,0 +1,39 @@
+{% extends "user/base_chat.html" %}
+{% block title %}Lead Comments{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h3 class="mb-4">📝 Comments for {{ lead.name }}</h3>
+
+  {% if comments %}
+  <table class="table table-bordered table-striped">
+    <thead class="thead-dark">
+      <tr>
+        <th scope="col">Time</th>
+        <th scope="col">Comment</th>
+        <th scope="col">By</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for comment in comments %}
+      <tr>
+        <td>{{ comment.created_at.strftime("%Y-%m-%d %I:%M %p") }}</td>
+        <td>{{ comment.content }}</td>
+        <td>
+          {% if comment.generated_by == "admin" %}
+            <span class="badge badge-primary">Admin</span>
+          {% elif comment.generated_by in ["sales_rep", "user"] %}
+            <span class="badge badge-success">Sales Rep</span>
+          {% else %}
+            <span class="badge badge-secondary">{{ comment.generated_by }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div class="alert alert-info">No comments added yet for this lead.</div>
+  {% endif %}
+</div>
+{% endblock %}
