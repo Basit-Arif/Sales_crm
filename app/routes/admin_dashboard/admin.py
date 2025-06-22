@@ -773,3 +773,47 @@ def transfer_leads():
 
     finally:
         db.close()
+
+    
+
+@admin_bp.route("/users/<int:user_id>/edit", methods=["GET", "POST"])
+@admin_required
+def edit_user(user_id):
+    db = get_db()
+    try:
+        user = db.query(User).filter_by(id=user_id).first()
+        sales_rep = db.query(SalesRep).filter_by(user_id=user_id).first()
+
+        if request.method == "POST":
+            user.email = request.form.get("email")
+            user.username = request.form.get("username")
+            is_active = request.form.get("is_active") == "on"
+
+            if sales_rep:
+                sales_rep.phone_number = request.form.get("phone_number")
+                sales_rep.active = is_active
+                sales_rep.status = "active" if is_active else "inactive"
+                sales_rep.status_updated_at = datetime.now(pytz.utc)
+
+            db.commit()
+            flash("✅ User updated successfully.", "success")
+            return redirect(url_for("admin.manage_users"))
+
+        return render_template("admin/edit_user.html", user=user, sales_rep=sales_rep)
+
+    except Exception as e:
+        db.rollback()
+        flash(f"❌ Error updating user: {str(e)}", "danger")
+        return redirect(url_for("admin.dashboard"))
+    finally:
+        db.close()
+
+
+@admin_bp.route("/users")
+def manage_users():
+    db = get_db()
+    try:
+        users = db.query(User).outerjoin(SalesRep).options(joinedload(User.sales_rep)).all()
+        return render_template("admin/manage_user.html", users=users)
+    finally:
+        db.close()
