@@ -110,16 +110,16 @@
     <a class="dropdown-toggle {% if request.endpoint in ['admin.manage_users', 'admin.add_user'] %}active{% endif %}" 
        href="#" 
        id="userDropdown" 
-       data-toggle="dropdown" 
-       aria-haspopup="true" 
-       aria-expanded="false">
+       data-bs-toggle="dropdown"  
+       aria-expanded="false"
+       role="button">
       <span class="sidebar-icon"><i class="fas fa-users-cog"></i></span>
       <span class="sidebar-label">Users</span>
     </a>
-    <div class="dropdown-menu" aria-labelledby="userDropdown">
-      <a class="dropdown-item" href="{{ url_for('admin.manage_users') }}">👥 Manage Users</a>
-      <a class="dropdown-item" href="{{ url_for('admin.add_user') }}">➕ Add User</a>
-    </div>
+    <ul class="dropdown-menu" aria-labelledby="userDropdown">
+      <li><a class="dropdown-item" href="{{ url_for('admin.manage_users') }}">👥 Manage Users</a></li>
+      <li><a class="dropdown-item" href="{{ url_for('admin.add_user') }}">➕ Add User</a></li>
+    </ul>
   </div>
 </div>
 salesrep_overview
