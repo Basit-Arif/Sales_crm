@@ -6,7 +6,7 @@ from app.models.models import User, ReminderPurpose,db
 def safe_seed_data():
     # Seed admin user if not exists
     if not User.query.filter_by(username="admin").first():
-        admin = User(username="admin", password=generate_password_hash("123admin"),email="admin@gmail.com")
+        admin = User(username="admin", password=generate_password_hash("123admin"),email="admin@gmail.com",is_admin=True)
         db.session.add(admin)
 
     # Seed reminder purposes if not exists
@@ -16,5 +16,3 @@ def safe_seed_data():
 
     db.session.commit()
 
-if __name__ == "__main__":
-    safe_seed_data()

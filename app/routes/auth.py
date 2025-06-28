@@ -24,6 +24,7 @@ def login():
             print(f"User {session['user_id']} logged in")
         
             session["is_admin"] = user.is_admin
+            session["role"] = "admin" if user.is_admin else "user"
             flash("✅ Login successful", "success")
             return redirect(url_for("admin.index") if user.is_admin else url_for("user.index"))
         else:

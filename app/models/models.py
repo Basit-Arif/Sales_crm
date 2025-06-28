@@ -67,6 +67,7 @@ class Lead(db.Model):
     assigned_at = Column(DateTime, default=local_now)
     last_active_at = Column(DateTime, default=local_now, onupdate=local_now)
     status = Column(String(50), default="active")
+    is_admin_override = Column(Boolean, default=False)
 
     sales_rep = db.relationship("SalesRep", back_populates="leads")
 

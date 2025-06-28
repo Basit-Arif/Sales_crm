@@ -26,6 +26,11 @@
   <button class="btn btn-sm btn-outline-success mb-3" data-bs-toggle="modal" data-bs-target="#summaryModal">
     Add Summary
   </button>
+  
+  <a href="{{ url_for('user.view_chat', lead_id=lead.id, platform=lead.platform) }}" class="btn btn-sm btn-primary">
+    💬 View Conversation
+  </a>
+
   <button class="btn btn-sm btn-outline-info mb-3" data-bs-toggle="modal" data-bs-target="#transferLeadModal">
     Transfer Lead
   </button>

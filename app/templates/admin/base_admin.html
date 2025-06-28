@@ -122,7 +122,7 @@
     </ul>
   </div>
 </div>
-salesrep_overview
+
 <div class="topbar" id="topbar">
   <button class="toggle-btn" onclick="toggleSidebar()">
     <i class="fas fa-bars"></i>
@@ -137,7 +137,14 @@ salesrep_overview
       {% endfor %}
     </select>
   </form>
+  <div class="ms-auto">
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-sm">
+      <i class="fas fa-sign-out-alt"></i> Logout
+    </a>
+  </div>
+  
 </div>
+
 
 <div class="main-content" id="mainContent">
   <div class="container-fluid">

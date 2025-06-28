@@ -83,6 +83,11 @@
             </div>
           </div>
       <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+      {% if session['role'] == 'admin' %}
+      <a href="{{ url_for('admin.dashboard') }}" class="btn btn-warning btn-sm ml-2">
+        <i class="fas fa-arrow-left"></i> Back to Admin Dashboard
+      </a>
+      {% endif %} 
     </div>
   </nav>
   <div class="container-fluid" id="main-container" style="margin-top: 56px;">

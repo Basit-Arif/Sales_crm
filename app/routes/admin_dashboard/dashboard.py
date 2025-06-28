@@ -94,9 +94,68 @@ def dashboard():
         ]
     
         # Dummy chart data
-        labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-        leads_data = [5, 6, 3, 7, 4, 5, 6]
-        messages_data = [10, 12, 8, 9, 11, 6, 7]
+       
+        import pytz
+        from collections import Counter
+       
+
+        # Define timezone
+        pakistan_tz = pytz.timezone("Asia/Karachi")
+
+        # Get today's date in Pakistan time
+        today = datetime.now().date()
+
+        # Last 7 days (from today)
+        last_7_days = [today - timedelta(days=i) for i in reversed(range(7))]
+
+        # Fetch leads created in the last 7 days
+        lead_rows = db.query(Lead.assigned_at).filter(
+            Lead.assigned_at >= datetime.now() - timedelta(days=7)
+        ).all()
+
+        # Fetch messages sent in the last 7 days
+        message_rows = db.query(LeadMessage.timestamp).filter(
+            LeadMessage.timestamp >= datetime.utcnow() - timedelta(days=7)
+        ).all()
+
+        # Group by day in Asia/Karachi timezone
+        def group_by_local_day(timestamps):
+            day_counter = Counter()
+            for ts in timestamps:
+                if ts[0]:  # handle null values
+                    local_day = ts[0].astimezone(pakistan_tz).date()
+                    day_counter[local_day] += 1
+            return day_counter
+
+        lead_dict = group_by_local_day(lead_rows)
+        message_dict = group_by_local_day(message_rows)
+
+        # Format chart data
+        labels = [day.strftime('%a') for day in last_7_days]
+        leads_data = [lead_dict.get(day, 0) for day in last_7_days]
+        messages_data = [message_dict.get(day, 0) for day in last_7_days]
+
+        lead_dict = group_by_local_day(lead_rows)
+        message_dict = group_by_local_day(message_rows)
+
+        # Final values
+        labels = [day.strftime('%a') for day in last_7_days]
+        leads_data = [lead_dict.get(day, 0) for day in last_7_days]
+        messages_data = [message_dict.get(day, 0) for day in last_7_days]
+        platform_counts = (
+            db.query(Lead.platform, func.count(Lead.id))
+            .filter(Lead.platform.in_(['messenger', 'instagram']))
+            .group_by(Lead.platform)
+            .all()
+        )
+
+        pie_labels = []
+        pie_data = []
+        platform_map = {"messenger": "Messenger", "instagram": "Instagram"}
+
+        for platform_code, count in platform_counts:
+            pie_labels.append(platform_map.get(platform_code, "Other"))
+            pie_data.append(count)
 
         return render_template(
             'admin/admin_dashboard.html',
@@ -106,7 +165,8 @@ def dashboard():
             last_active_reps=last_active_reps,
             upcoming_meetings=upcoming_meetings,
             selected_company=company_filter,
-            
+            pie_labels=pie_labels,
+            pie_data=pie_data
         )
     finally:
         db.close()

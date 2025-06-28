@@ -144,13 +144,20 @@ def view_chat(lead_id):
     user_id = session["user_id"]
     platform = request.args.get("platform")
 
-    sales_rep_id = session_db.query(SalesRep).filter_by(user_id=user_id).first()
-    if not sales_rep_id:
-        return "SalesRep not found", 403
+    # Check if the current user is admin
+    is_admin = session.get("is_admin") 
+    print("is_admin", is_admin)
 
-    leads_query = session_db.query(Lead)\
-        .options(joinedload(Lead.messages))\
-        .filter_by(sales_rep_id=sales_rep_id.id, platform=platform).all()
+    if is_admin:
+        leads_query = session_db.query(Lead).options(joinedload(Lead.messages))\
+            .filter_by(platform=platform).all()
+    else:
+        sales_rep = session_db.query(SalesRep).filter_by(user_id=user_id).first()
+        if not sales_rep:
+            return "SalesRep not found", 403
+
+        leads_query = session_db.query(Lead).options(joinedload(Lead.messages))\
+            .filter_by(sales_rep_id=sales_rep.id, platform=platform).all()
 
     processed_leads = []
     selected_lead_data = None
@@ -175,7 +182,8 @@ def view_chat(lead_id):
             selected_lead_data = {
                 'id': lead.id,
                 'name': lead.name,
-                'status': lead.status.lower() if lead.status else 'active'
+                'status': lead.status.lower() if lead.status else 'active',
+                'is_admin_override': getattr(lead, 'is_admin_override', False)
             }
 
             selected_messages = [
@@ -198,13 +206,15 @@ def view_chat(lead_id):
         })
 
     session_db.close()
+    template_base = "user/base_chat.html"
 
     return render_template(
         "user/massenger_chat.html",
         leads=processed_leads,
         selected_lead=selected_lead_data,
         messages=selected_messages,
-        platform=platform
+        platform=platform,
+        template_base=template_base
     )
 
 import os
@@ -468,7 +478,7 @@ def add_lead_comment(lead_id):
             lead_id=lead_id,
             content=content,
             summary_date=datetime.now(pytz.timezone("Asia/Karachi")),
-            generated_by="user",
+            generated_by=session["role"],
         )
         session_db.add(comment)
         session_db.commit()

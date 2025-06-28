@@ -9,6 +9,7 @@ import traceback
 import markdown
 from markupsafe import Markup
 from sqlalchemy import func
+from app.routes.auth import login_required
 
 @admin_bp.route("/leads/overview")
 def leads_overview():
@@ -178,5 +179,18 @@ def add_lead_summary():
         flash(f"An error occurred: {str(e)}", "danger")
         return redirect(url_for("admin.lead_detail", lead_id=lead_id))
 
+    finally:
+        db.close()
+
+@admin_bp.route("/lead/<int:lead_id>/override", methods=["POST"])
+@login_required
+def override_lead(lead_id):
+    db = get_db()
+    try:
+        lead = db.query(Lead).get(lead_id)
+        override = request.form.get("override") == "True"
+        lead.is_admin_override = override
+        db.commit()
+        return redirect(url_for("user.view_chat", lead_id=lead_id, platform=lead.platform))
     finally:
         db.close()

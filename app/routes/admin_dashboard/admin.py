@@ -50,9 +50,11 @@ def teardown_db(exception=None):
     
 @admin_bp.route('/')
 def index():
-    print(session["user_id"])
-    # Fetch all companies for the dropdown
-    
+    print("Session after login:", dict(session))
+
+    if not session.get("is_admin"):
+        flash("⚠️ Access restricted to admins only.", "danger")
+        return redirect(url_for("user.index"))
 
     return render_template('admin/base_admin.html')
 

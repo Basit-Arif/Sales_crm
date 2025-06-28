@@ -41,16 +41,23 @@
     </div>
   </div>
 
+  <!-- Lead Source Pie Chart -->
+  <div class="card mt-4" style="max-width: 300px;">
+    <div class="card-header">Lead Source</div>
+    <div class="card-body text-center">
+      <canvas id="leadPieChart" style="max-width: 200px;"></canvas>
+    </div>
+  </div>
+
   <!-- Weekly Activity Chart -->
-  <div class="card">
+  <div class="card mt-4">
     <div class="card-header">Weekly Activity</div>
     <div class="card-body">
       <canvas id="activityChart" height="100"></canvas>
     </div>
   </div>
 
-  <!-- Top Sales Reps This Week -->
-  
+ 
 
   <!-- Upcoming Meetings -->
   <div class="card mt-4">
@@ -63,7 +70,6 @@
             <strong>{{ meeting.lead_name }}</strong><br>
             <small>Rep: {{ meeting.rep_name }}</small>
           </div>
-          
           <span class="badge bg-info">{{ meeting.meeting_time }}</span>
         </li>
         {% else %}
@@ -72,6 +78,8 @@
       </ul>
     </div>
   </div>
+
+  <!-- Last Active Reps -->
   <div class="card mt-4">
     <div class="card-header">Last Active Sales Reps</div>
     <div class="card-body p-0">
@@ -80,7 +88,7 @@
           <tr>
             <th>Rep</th>
             <th>Last Activity</th>
-            <th>Client </th>
+            <th>Client</th>
           </tr>
         </thead>
         <tbody>
@@ -92,7 +100,7 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="2" class="text-muted text-center">No recent activity.</td>
+            <td colspan="3" class="text-muted text-center">No recent activity.</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -131,27 +139,40 @@
         }
       }
     }
-});
+  });
 </script>
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     const url = new URL(window.location.href);
     const company = url.searchParams.get("company") || "all";
 
-    console.log(company)
     fetch(`/admin/api/kpi_summary?company=${encodeURIComponent(company)}`)
-    .then(res => {
-      if (!res.ok) throw new Error("Network response was not ok");
-      return res.json();
-    })
-    .then(data => {
-      document.getElementById("total-leads").textContent = data.total_leads;
-      document.getElementById("total-reps").textContent = data.total_reps;
-      document.getElementById("meetings-today").textContent = data.meetings_today;
-      document.getElementById("overdue-followups").textContent = data.overdue_followups;
-      
-    })
-
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("total-leads").textContent = data.total_leads;
+        document.getElementById("total-reps").textContent = data.total_reps;
+        document.getElementById("meetings-today").textContent = data.meetings_today;
+        document.getElementById("overdue-followups").textContent = data.overdue_followups;
+      });
+  });
+</script>
+<script>
+  const pieCtx = document.getElementById('leadPieChart').getContext('2d');
+  new Chart(pieCtx, {
+    type: 'pie',
+    data: {
+      labels: {{ pie_labels | tojson }},
+      datasets: [{
+        data: {{ pie_data | tojson }},
+        backgroundColor: ['#007bff', '#e1306c']
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom' }
+      }
+    }
   });
 </script>
 {% endblock %}
