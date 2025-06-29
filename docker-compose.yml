@@ -41,3 +41,13 @@ services:
     ports:
       - "6379:6379"
 
+  ngix:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - flask
+      - ai-agent
+
