@@ -49,6 +49,7 @@ def create_app(config_class=Config):
         from app.routes.auth import auth_bp
         from app.routes.user_dashboard.meeting import meeting
 
+       
         app.register_blueprint(massenger_bp)
         app.register_blueprint(webhook_bp)
         app.register_blueprint(user_bp)
@@ -63,6 +64,13 @@ def create_app(config_class=Config):
 
         env = os.environ.get("FLASK_ENV", "").lower()
         print(f"🌐 ENV: {env}")
+
+        if env in ["test"]:
+            from flask_migrate import upgrade
+            upgrade()
+            print("🧪 Running in test mode. Skipping migrations and seeding."
+                  " Use `pytest` to run tests.")
+            return app
 
         if env in ["development", "production"]:
             user_count = db.session.query(User).count()

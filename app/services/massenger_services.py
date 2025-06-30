@@ -58,7 +58,7 @@ def get_lead_name(psid: str, platform: str, access_token: str) -> str | None:
         return None
 
 
-def send_message(psid: str, text: str, lead_id: int, access_token:str, message_type="text", platform="messenger"):
+def send_message(psid: str, text: str, lead_id: int, access_token: str, message_type="text", platform="messenger"):
     # Step 1: Save message with pending status
     new_message = LeadMessage(
         lead_id=lead_id,
@@ -72,26 +72,58 @@ def send_message(psid: str, text: str, lead_id: int, access_token:str, message_t
     db.session.add(new_message)
     db.session.commit()
 
-    # Step 2: Send message based on platform
+    # Step 2: Prepare request
     headers = {"Content-Type": "application/json"}
     params = {"access_token": access_token}
 
     if platform == "messenger":
         url = "https://graph.facebook.com/v17.0/me/messages"
-        payload = {
-            "recipient": {"id": psid},
-            "message": {"text": text},
-            "messaging_type": "MESSAGE_TAG",
-            "tag": "HUMAN_AGENT"
-        }
+
+        if message_type == "image":
+            payload = {
+                "recipient": {"id": psid},
+                "message": {
+                    "attachment": {
+                        "type": "image",
+                        "payload": {
+                            "url": text,  # Here, text holds the image URL
+                            "is_reusable": True
+                        }
+                    }
+                },
+                "messaging_type": "MESSAGE_TAG",
+                "tag": "HUMAN_AGENT"
+            }
+        else:
+            payload = {
+                "recipient": {"id": psid},
+                "message": {"text": text},
+                "messaging_type": "MESSAGE_TAG",
+                "tag": "HUMAN_AGENT"
+            }
 
     elif platform == "instagram":
-        url = f"https://graph.instagram.com/v21.0/me/messages"
-        payload = {
-            "recipient": {"id": psid},
-            "message": {"text": text},
-            "messaging_type": "RESPONSE"
-        }
+        url = "https://graph.facebook.com/v17.0/me/messages"
+
+        if message_type == "image":
+            payload = {
+                "recipient": {"id": psid},
+                "message": {
+                    "attachment": {
+                        "type": "image",
+                        "payload": {
+                            "url": text
+                        }
+                    }
+                },
+                "messaging_type": "RESPONSE"
+            }
+        else:
+            payload = {
+                "recipient": {"id": psid},
+                "message": {"text": text},
+                "messaging_type": "RESPONSE"
+            }
 
     else:
         print("❌ Unknown platform")
@@ -99,6 +131,7 @@ def send_message(psid: str, text: str, lead_id: int, access_token:str, message_t
         db.session.commit()
         return None
 
+    # Step 3: Send request
     response = requests.post(url, headers=headers, params=params, json=payload)
     print("📤 Message response:", response.text)
 
