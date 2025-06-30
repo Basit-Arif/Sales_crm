@@ -227,12 +227,15 @@ import mimetypes
 def send_message_to_lead(lead_id):
     session_db = db.session
     lead = session_db.query(Lead).filter_by(id=lead_id).first()
+    
 
     if not lead:
         flash("❌ Lead not found.", "error")
         return redirect(url_for("user.dashboard"))
 
     platform = lead.platform.lower()
+    lead_id = lead.id
+
 
     # 🧠 Get access token from lead -> sales_rep -> company
     company = lead.sales_rep.company
