@@ -12,6 +12,7 @@ services:
       - ./app/.env
     depends_on:
       - redis
+    
 
 
   celery:

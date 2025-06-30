@@ -182,7 +182,7 @@ def detect_meeting_intent(lead_id: int, message_content: str):
             print("Combined text:", combined)
 
             # Fake detection
-            response = requests.post("http://localhost:8000/process", json={
+            response = requests.post("http://crmceo:8000/process", json={
                 "lead_message": combined,
                 "lead_id": lead_id
             }, timeout=10)
