@@ -292,9 +292,8 @@ def send_message_to_lead(lead_id):
         )
         if status.status_code != 200:
             flash("⚠️ Failed to send attachment.", "error")
-        lead_id = lead.id
-        platform = lead.platform
-
+       
+ 
     session_db.close()
     return redirect(url_for("user.view_chat", lead_id=lead_id, platform=platform))
 
