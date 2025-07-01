@@ -269,29 +269,53 @@ def send_message_to_lead(lead_id):
             flash("⚠️ Failed to send text message.", status.text,)
 
     # 📎 Handle file attachment
+    import boto3
+    from botocore.exceptions import NoCredentialsError
+    import os
+
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+
     uploaded_file = request.files.get("file")
+
     if uploaded_file and uploaded_file.filename:
         filename = secure_filename(uploaded_file.filename)
-        upload_path = os.path.join(current_app.root_path, "static", "uploads")
-        os.makedirs(upload_path, exist_ok=True)
-        file_path = os.path.join(upload_path, filename)
-        uploaded_file.save(file_path)
 
-        file_url = url_for("static", filename=f"uploads/{filename}", _external=True)
-        mime_type, _ = mimetypes.guess_type(filename)
-        message_type = "image" if mime_type and mime_type.startswith("image") else "file"
+        # Upload to S3
+        s3 = boto3.client("s3")
+        bucket_name = "crmceobucket"  # replace with your actual bucket name
+        s3_key = f"uploads/{filename}"
 
-        status = send_message(
-            psid=lead.external_user_id,
-            text=file_url,
-            lead_id=lead.id,
-            access_token=access_token,
-            message_type=message_type,
-            platform=platform,
-            
-        )
-        if status.status_code != 200:
-            flash("⚠️ Failed to send attachment.", "error")
+        try:
+            s3.upload_fileobj(
+                uploaded_file,
+                bucket_name,
+                s3_key,                
+            )
+            # S3 public URL
+            file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+
+            # Determine message type
+            mime_type, _ = mimetypes.guess_type(filename)
+            message_type = "image" if mime_type and mime_type.startswith("image") else "file"
+
+            # Send the message with S3 URL
+            status = send_message(
+                psid=lead.external_user_id,
+                text=file_url,
+                lead_id=lead.id,
+                access_token=access_token,
+                message_type=message_type,
+                platform=platform,
+            )
+
+            if status.status_code != 200:
+                flash("⚠️ Failed to send attachment.", "error")
+
+        except NoCredentialsError:
+            flash("❌ AWS credentials not found. Cannot upload file.", "danger")
+        except Exception as e:
+            flash(f"❌ S3 upload failed: {str(e)}", "danger")
        
  
     session_db.close()
