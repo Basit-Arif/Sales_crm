@@ -42,6 +42,8 @@ jobs:
         script: |
           cd /home/ubuntu/Sales_crm
           git pull
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> app/.env
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> app/.env
           docker compose down
           docker compose pull
           docker compose up -d
