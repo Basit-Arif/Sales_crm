@@ -32,6 +32,7 @@ jobs:
         tags: basit456/sales-crm-image:latest
         cache-from: type=registry,ref=basit456/sales-crm-image:buildcache
         cache-to: type=registry,ref=basit456/sales-crm-image:buildcache,mode=max
+        
 
     - name: Deploy on EC2
       uses: appleboy/ssh-action@v1.0.0
@@ -47,3 +48,4 @@ jobs:
           docker compose down
           docker compose pull
           docker compose up -d
+
