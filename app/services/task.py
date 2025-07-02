@@ -117,7 +117,7 @@ def detect_meeting_intent_local(lead_id: int, message_content: str):
             print("Regex Result:", result)
 
             try:
-                response = requests.post("http://crmceo/ai/process", json={
+                response = requests.post("https://crmceo.com/ai/process", json={
                     "lead_message": combined_message,
                     "lead_id": lead_id
                 })
@@ -182,7 +182,7 @@ def detect_meeting_intent(lead_id: int, message_content: str):
             print("Combined text:", combined)
 
             # Fake detection
-            response = requests.post("http://crmceo/ai/process", json={
+            response = requests.post("https://crmceo.com/ai/process", json={
                 "lead_message": combined,
                 "lead_id": lead_id
             }, timeout=10)
@@ -280,7 +280,7 @@ def summarize_leads_for_date(lead_id: int, summary_date: str):
                 for msg in messages
                 )
                 print("in this")              
-                response = requests.post("http://crmceo.com/ai/summarize", json={
+                response = requests.post("https://crmceo.com/ai/summarize", json={
                     "lead_id": lead_id,
                     "summary_date": summary_date,
                     "formatted_text": formatted_text
