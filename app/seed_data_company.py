@@ -9,6 +9,7 @@ def safe_seed_data():
         admin = User(username="admin", password=generate_password_hash("123admin"),email="admin@gmail.com",is_admin=True)
         db.session.add(admin)
 
+
     # Seed reminder purposes if not exists
     for purpose in ["Meeting", "Follow-up"]:
         if not ReminderPurpose.query.filter_by(name=purpose).first():

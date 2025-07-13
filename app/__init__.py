@@ -67,10 +67,12 @@ def create_app(config_class=Config):
 
         if env in ["test"]:
             from flask_migrate import upgrade
-            upgrade()
+            
             print("🧪 Running in test mode. Skipping migrations and seeding."
-                  " Use `pytest` to run tests.")
+                " Use `pytest` to run tests.")
             return app
+
+            
 
         if env in ["development", "production"]:
             user_count = db.session.query(User).count()

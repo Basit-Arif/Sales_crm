@@ -216,7 +216,6 @@ def view_chat(lead_id):
         platform=platform,
         template_base=template_base
     )
-
 import os
 from werkzeug.utils import secure_filename
 from flask import current_app
@@ -256,68 +255,77 @@ def send_message_to_lead(lead_id):
     # 📝 Send text message
     text = request.form.get("message", "").strip()
     if text:
-        status = send_message(
+        from app.services.massenger_services import create_pending_message
+        message_id = create_pending_message(
             psid=lead.external_user_id,
             text=text,
             lead_id=lead.id,
+            message_type="text",
+            platform=platform
+        )
+        from app.services.task import async_send_message
+
+        async_send_message.delay(
+            message_id=message_id,
+            psid=lead.external_user_id,
+            text=text,
             access_token=access_token,
             message_type="text",
-            platform=platform,
-            
+            platform=platform
         )
-        if status.status_code != 200:
-            flash("⚠️ Failed to send text message.", status.text,)
+        
 
     # 📎 Handle file attachment
     import boto3
     from botocore.exceptions import NoCredentialsError
     import os
+    import mimetypes
+    from werkzeug.utils import secure_filename
 
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 
     uploaded_file = request.files.get("file")
-
     if uploaded_file and uploaded_file.filename:
-        filename = secure_filename(uploaded_file.filename)
-
-        # Upload to S3
-        s3 = boto3.client("s3")
-        bucket_name = "crmceobucket"  # replace with your actual bucket name
-        s3_key = f"uploads/{filename}"
-
         try:
-            s3.upload_fileobj(
-                uploaded_file,
-                bucket_name,
-                s3_key,                
-            )
-            # S3 public URL
-            file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+            from app.services.massenger_services import create_pending_message
+            from app.services.task import async_upload_and_send_file  # ✅ Correct import path
+
+            filename = secure_filename(uploaded_file.filename)
+            content_type = uploaded_file.content_type
+            file_content = uploaded_file.read()
 
             # Determine message type
-            mime_type, _ = mimetypes.guess_type(filename)
-            message_type = "image" if mime_type and mime_type.startswith("image") else "file"
+            message_type = "image" if content_type.startswith("image") else "file"
 
-            # Send the message with S3 URL
-            status = send_message(
+            # Create a pending message in DB
+            message_id = create_pending_message(
                 psid=lead.external_user_id,
-                text=file_url,
+                text="",  # To be updated after S3 upload
                 lead_id=lead.id,
-                access_token=access_token,
                 message_type=message_type,
                 platform=platform,
             )
 
-            if status.status_code != 200:
-                flash("⚠️ Failed to send attachment.", "error")
+            # Queue Celery task for upload + send
+            async_upload_and_send_file.delay(
+                message_id=message_id,
+                file_name=filename,
+                file_content=file_content,
+                content_type=content_type,
+                bucket_name="crmceobucket",
+                platform=platform,
+                psid=lead.external_user_id,
+                access_token=access_token
+            )
+
+            flash("✅ Attachment is being sent...", "info")
 
         except NoCredentialsError:
             flash("❌ AWS credentials not found. Cannot upload file.", "danger")
         except Exception as e:
             flash(f"❌ S3 upload failed: {str(e)}", "danger")
-       
- 
+
     session_db.close()
     return redirect(url_for("user.view_chat", lead_id=lead_id, platform=platform))
 
@@ -539,3 +547,19 @@ def view_lead_comments(lead_id):
         return render_template("user/view_lead_comments.html", lead=lead, comments=comments)
     finally:
         session_db.close()
+
+
+
+
+@user_bp.route("/api/message/<int:message_id>")
+@login_required
+def get_message_content(message_id):
+    message = db.session.query(LeadMessage).filter_by(id=message_id).first()
+    if not message:
+        return {"error": "Message not found"}, 404
+
+    return {
+        "id": message.id,
+        "content": message.content,
+        "message_type": message.message_type
+    }

@@ -20,7 +20,6 @@ def leads_overview():
         today = datetime.now()
         summary_date = today.date()
         inactive_threshold = today - timedelta(days=5)
-
         # Filter leads based on company
         if company_filter == "all":
             leads = db.query(Lead).all()

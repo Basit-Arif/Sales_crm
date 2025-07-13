@@ -327,6 +327,7 @@ import pytz
 from app.models import db
 from app.models.models import ReminderLog, Lead, Meeting
 from app.services.whatsapp_services import send_meeting_reminder_function
+from app.services.massenger_services import send_message
 
 @celery.task(name="send_whatsapp_reminder")
 def send_whatsapp_reminder(reminder_id):
@@ -386,3 +387,61 @@ def send_whatsapp_reminder(reminder_id):
     except Exception as e:
         db.session.rollback()
         logger.error(f"🔥 CRITICAL ERROR during reminder {reminder_id}: {str(e)}", exc_info=True)
+
+
+
+@celery.task(bind=True, max_retries=3)
+def async_send_message(self, message_id, psid, text, access_token, message_type, platform):
+    try:
+        send_message(message_id, psid, text, access_token, message_type, platform)
+    except Exception as e:
+        print("❌ Celery async_send_message failed:", e)
+        self.retry(exc=e, countdown=5)
+
+
+@celery.task()
+def async_upload_and_send_file(message_id, file_name, file_content, content_type, bucket_name, platform, psid, access_token):
+    import boto3
+    from botocore.exceptions import BotoCoreError, NoCredentialsError
+
+    s3 = boto3.client("s3")
+    s3_key = f"uploads/{file_name}"
+
+    try:
+        # ✅ Upload file to S3
+        s3.put_object(
+            Bucket=bucket_name,
+            Key=s3_key,
+            Body=file_content,
+            ContentType=content_type
+        )
+
+        # ✅ Generate public URL
+        file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
+
+        # ✅ Update message with actual file URL
+        session = db.session
+        message = session.query(LeadMessage).filter_by(id=message_id).first()
+        if message:
+            message.text = file_url  # So frontend can render it
+            session.commit()
+
+        # ✅ Send message
+        send_message(
+            message_id=message_id,
+            psid=psid,
+            text=file_url,
+            access_token=access_token,
+            message_type="image" if content_type.startswith("image") else "file",
+            platform=platform
+        )
+
+    except (BotoCoreError, NoCredentialsError, Exception) as e:
+        print(f"❌ S3 Upload/Send Failed: {e}")
+
+        # ❌ Mark message as failed
+        session = db.session
+        message = session.query(LeadMessage).filter_by(id=message_id).first()
+        if message:
+            message.status = "failed"
+            session.commit()

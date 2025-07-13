@@ -121,7 +121,7 @@
           " style="max-width: 75%; border-radius: 1.2rem; word-break: break-word;">
           <div class="card-body p-0">
             {% if msg.message_type == 'image' %}
-              <img src="{{ msg.content }}" class="img-fluid rounded mb-2 preview-image" style="max-height: 150px; cursor:pointer;" data-src="{{ msg.content }}">
+              <img src="{{ msg.content }}" class="img-fluid rounded mb-2 preview-image" style="max-height: 150px; cursor:pointer;",loading="lazy", data-src="{{ msg.content }}">
             {% elif msg.message_type == 'file' %}
               <a href="{{ msg.content }}" target="_blank" class="font-weight-bold text-decoration-none {% if msg.sender == 'rep' %}text-white{% else %}text-dark{% endif %}">
                 📎 Download file
@@ -130,25 +130,46 @@
               <span class="d-block" style="white-space: pre-line;">{{ msg.content }}</span>
             {% endif %}
             <div class="msg-time d-flex align-items-center mt-1 small" style="font-size: 0.92em;">
-              <span class="mr-2 text-nowrap" style="opacity:0.75;">{{ msg.timestamp.strftime('%I:%M %p %Y-%m-%d') }}</span>
+              <span class="mr-2 text-nowrap" style="opacity: 0.75;">
+                {{ msg.timestamp.strftime('%I:%M %p %Y-%m-%d') }}
+              </span>
+            
               {% if msg.sender == 'rep' %}
-                {% if msg.status in ['failed', 'pending'] %}
-                  <span class="ml-2 d-flex align-items-center">
-                    <span class="text-danger font-weight-bold" title="Failed to send" style="font-size:1.1em;">❗</span>
+                {% if msg.status == 'failed' %}
+                  <span class="ml-2 d-flex align-items-center msg-status failed" data-id="{{ msg.id }}">
+                    <span class="text-danger font-weight-bold" title="Failed to send" style="font-size: 1.1em;">❗</span>
                     <button class="btn btn-sm btn-link text-danger retry-btn ml-1 p-0"
                             data-message-id="{{ msg.id }}"
                             data-content="{{ msg.content }}"
                             data-message-type="{{ msg.message_type }}"
-                            style="font-size:0.98em;">
+                            style="font-size: 0.98em;">
                       🔁 Retry
                     </button>
                   </span>
+            
+                {% elif msg.status == 'pending' %}
+                  <span class="ml-2 d-flex align-items-center msg-status pending" data-id="{{ msg.id }}">
+                    <span class="spinner-border spinner-border-sm text-secondary ml-1" role="status" aria-hidden="true"></span>
+                    <span class="text-muted ml-1">Sending...</span>
+                  </span>
+            
                 {% elif msg.status == 'sent' %}
-                  <span class="ml-2 text-muted font-weight-bold align-middle msg-status sent" data-id="{{ msg.id }}" title="Sent" style="font-size:1.05em;vertical-align:middle;color:black;">✓</span>
+                  <span class="ml-2 text-muted font-weight-bold align-middle msg-status sent" data-id="{{ msg.id }}"
+                        title="Sent" style="font-size: 1.05em; vertical-align: middle; color: black;">
+                    ✓
+                  </span>
+            
                 {% elif msg.status == 'delivered' %}
-                  <span class="msg-status delivered" data-id="{{ msg.id }}" title="Delivered" style="font-size:1.05em;vertical-align:middle;font-weight:bold;margin-left:6px;display:inline-block;color:black;">✓✓</span>
+                  <span class="ml-2 font-weight-bold align-middle msg-status delivered" data-id="{{ msg.id }}"
+                        title="Delivered" style="font-size: 1.05em; vertical-align: middle; color: black;">
+                    ✓✓
+                  </span>
+            
                 {% elif msg.status == 'read' %}
-                  <span class="ml-2 text-success font-weight-bold align-middle msg-status read" data-id="{{ msg.id }}" title="Read" style="font-size:1.05em;vertical-align:middle;color:black;">✓✓</span>
+                  <span class="ml-2 text-success font-weight-bold align-middle msg-status read" data-id="{{ msg.id }}"
+                        title="Read" style="font-size: 1.05em; vertical-align: middle; color: black;">
+                    ✓✓
+                  </span>
                 {% endif %}
               {% endif %}
             </div>
@@ -239,15 +260,32 @@
    
   
   
-socket.on("message_status_update", function (data) {
+  socket.on("message_status_update", function (data) {
   const msgElement = document.querySelector(`.msg-status[data-id='${data.message_id}']`);
   if (msgElement) {
-    msgElement.classList.remove("sent", "delivered", "read");
+    msgElement.classList.remove("sent", "delivered", "read", "failed");
     msgElement.classList.add(data.status);
     msgElement.title = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-    msgElement.textContent = data.status === "delivered" || data.status === "read" ? "✓✓" : "✓";
+    msgElement.textContent = (data.status === "delivered" || data.status === "read") ? "✓✓" : "✓";
     msgElement.style.color = "black";
     console.log(`Message ${data.message_id} status updated to ${data.status}`);
+  }
+
+  // ✅ Now check and update the message body if empty (e.g., image preview not shown yet)
+  const msgContentContainer = document.querySelector(`.message[data-id="${data.message_id}"] .msg-body`);
+  if (msgContentContainer && msgContentContainer.innerHTML.trim() === "") {
+    // Fetch full message content from server
+    fetch(`/user/api/message/${data.message_id}`)
+      .then(res => res.json())
+      .then(msg => {
+        if (msg.message_type === "image") {
+          msgContentContainer.innerHTML = `<img src="${msg.content}" alt="Image" style="max-width:220px;">`;
+        } else if (msg.message_type === "file") {
+          msgContentContainer.innerHTML = `<a href="${msg.content}" target="_blank">📎 View File</a>`;
+        } else {
+          msgContentContainer.textContent = msg.content;
+        }
+      });
   }
 });
 
@@ -317,7 +355,27 @@ document.addEventListener("click", function (e) {
       });
     });
   });
+
+  
   document.addEventListener("DOMContentLoaded", function () {
+    const lazyImages = document.querySelectorAll("img[data-src]");
+
+    const observer = new IntersectionObserver((entries, obs) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target;
+          img.src = img.getAttribute("data-src");
+          
+          img.removeAttribute("data-src");
+          obs.unobserve(img);
+        }
+      });
+    }, {
+      rootMargin: "100px", // Preload a bit before it enters view
+      threshold: 0.01
+    });
+
+    lazyImages.forEach(img => observer.observe(img));
     document.querySelectorAll(".retry-btn").forEach(button => {
       button.addEventListener("click", function () {
         const messageId = this.dataset.messageId;
