@@ -50,6 +50,7 @@ def handle_webhook():
     print("🚀 Webhook hit!")
     body = request.get_json()
     print("📩 Webhook payload received:", body)
+    
 
     if not body:
         return jsonify({"error": "Empty or invalid payload"}), 400
@@ -61,7 +62,26 @@ def handle_webhook():
 
         if platform in ["page", "instagram"]:
             for event in entry.get("messaging", []):
-
+                if "message" in event and event["message"].get("is_echo"):
+                    platform_mid = event["message"]["mid"]
+                    db = current_app.extensions['sqlalchemy'].session
+                    try:
+                        msg = db.query(LeadMessage).filter_by(platform_message_id=platform_mid).first()
+                        if msg:
+                            msg.status = "sent"
+                            db.commit()
+                            room = f"user_{msg.lead.sales_rep.user_id}"
+                            socketio.emit("message_status_update", {
+                                "message_id": msg.id,
+                                "status": "sent"
+                            }, to=room)
+                    except Exception as e:
+                        db.rollback()
+                        print("❌ Echo DB error:", e)
+                    finally:
+                        db.close()
+                    continue
+            
                 if "delivery" in event:
                     for mid in event["delivery"].get("mids", []):
                         db = current_app.extensions['sqlalchemy'].session
@@ -73,7 +93,7 @@ def handle_webhook():
                                 room = f"user_{msg.lead.sales_rep.user_id}"
                                 socketio.emit("message_status_update", {
                                     "message_id": msg.id,
-                                    "status": "delivered"
+                                    "status": msg.status
                                 }, to=room)
                         except Exception as e:
                             db.rollback()
@@ -100,6 +120,7 @@ def handle_webhook():
                     finally:
                         db.close()
                     continue
+                
 
                 # 🎯 Only process if there is actual message content
                 message = event.get("message", {})

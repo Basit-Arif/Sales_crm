@@ -318,16 +318,32 @@ def send_message_to_lead(lead_id):
                 psid=lead.external_user_id,
                 access_token=access_token
             )
-
-            flash("✅ Attachment is being sent...", "info")
+            try:
+                socketio.emit("new_message", {
+                    "lead_id": lead.id,
+                    "sender_name": session.get("username"),
+                    "platform": platform,
+                    "message": {
+                        "id": message_id,
+                        "content": text,
+                        "sender": "sales_rep",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "message_type": "text",
+                        "status": "pending"
+                    }
+                }, room=f"lead_{lead.id}")
+            except e:
+                print("❌ Error emitting new_message event:", e)
+            return jsonify({"success": True, "message": "✅ Attachment is being sent...", "message_id": message_id})
 
         except NoCredentialsError:
-            flash("❌ AWS credentials not found. Cannot upload file.", "danger")
+            return jsonify({"success": False, "error": "❌ AWS credentials not found. Cannot upload file."}), 400
+
         except Exception as e:
-            flash(f"❌ S3 upload failed: {str(e)}", "danger")
+            return jsonify({"success": False, "error": f"❌ S3 upload failed: {str(e)}"}), 500
 
     session_db.close()
-    return redirect(url_for("user.view_chat", lead_id=lead_id, platform=platform))
+    return jsonify({"success": True, "message": "✅ Message is being sent."})
 
 @user_bp.route("/lead/<int:lead_id>/update-status", methods=["POST"])
 @login_required

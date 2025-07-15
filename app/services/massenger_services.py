@@ -230,6 +230,8 @@ def send_message(message_id, psid, text, access_token, message_type="text", plat
         session.commit()
         return None
 
+    # Removed optimistic emit block
+
     try:
         response = requests.post(url, headers=headers, params=params, json=payload)
         result = response.json()
@@ -237,6 +239,7 @@ def send_message(message_id, psid, text, access_token, message_type="text", plat
         if response.status_code == 200 and "message_id" in result:
             message.status = "sent"
             message.platform_message_id = result["message_id"]
+            
         else:
             message.status = "failed"
     except Exception as e:

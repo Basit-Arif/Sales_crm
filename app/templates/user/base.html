@@ -208,6 +208,10 @@
       updateSidebarDropdown(data.platform);
       console.log(data);
     });
+    socket.on("new_message_by_sender", function(data) {
+      console.log("New message by sender:", data);
+      showNewMessageToast(data.sender_name, data.content);
+    });
 
     socket.on("unread_update", function(data) {
       console.log("🔔 Unread update:", data);

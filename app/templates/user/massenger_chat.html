@@ -112,7 +112,7 @@
         <span id="success-icon" class="text-success d-none ml-2">✔</span>
       </div>
     </div>
-    <div class="chat-box" id="chat-box">
+    <div class="chat-box" id="chat-box" data-lead-id="{{ selected_lead.id }}">
       {% for msg in messages %}
       <div class="msg-row {% if msg.sender == 'rep' %}msg-rep{% else %}msg-user{% endif %} d-flex {% if msg.sender == 'rep' %}justify-content-end{% else %}justify-content-start{% endif %}">
         <div class="msg-bubble card px-3 py-2 mb-1
@@ -121,7 +121,7 @@
           " style="max-width: 75%; border-radius: 1.2rem; word-break: break-word;">
           <div class="card-body p-0">
             {% if msg.message_type == 'image' %}
-              <img src="{{ msg.content }}" class="img-fluid rounded mb-2 preview-image" style="max-height: 150px; cursor:pointer;",loading="lazy", data-src="{{ msg.content }}">
+              <img src="{{ msg.content }}" class="img-fluid rounded mb-2 preview-image" style="max-height: 150px; cursor:pointer;" data-src="{{ msg.content }}">
             {% elif msg.message_type == 'file' %}
               <a href="{{ msg.content }}" target="_blank" class="font-weight-bold text-decoration-none {% if msg.sender == 'rep' %}text-white{% else %}text-dark{% endif %}">
                 📎 Download file
@@ -184,16 +184,16 @@
         <div class="alert alert-warning mb-2">⚠️ Chat is closed. Please change status to "Active" to continue messaging.</div>
       {% endif %}
       {% if session['role'] == 'admin' or not selected_lead.is_admin_override %}
-      <form method="POST" action="{{ url_for('user.send_message_to_lead', lead_id=selected_lead.id ) }}" enctype="multipart/form-data">
+      <form id="messageForm" enctype="multipart/form-data">
         <div class="input-group mb-2">
-          <input type="text" name="message" class="form-control" placeholder="Type a message..." {% if selected_lead.status == 'closed' %}disabled{% endif %} />
+          <input type="text" name="message" id="messageInput" class="form-control" placeholder="Type a message..." {% if selected_lead.status == 'closed' %}disabled{% endif %} />
           <div class="input-group-append">
-            <button class="btn btn-primary" type="submit" {% if selected_lead.status == 'closed' %}disabled{% endif %}>Send</button>
+            <button id="sendBtn" class="btn btn-primary" type="submit" {% if selected_lead.status == 'closed' %}disabled{% endif %}>Send</button>
           </div>
         </div>
         <div class="form-group mb-0">
           <label for="file" class="btn btn-outline-secondary {% if selected_lead.status == 'closed' %}disabled{% endif %} mb-0">📎 Attach File</label>
-          <input type="file" name="file" class="d-none" id="file" {% if selected_lead.status == 'closed' %}disabled{% endif %} onchange="this.form.submit();">
+          <input type="file" name="file" id="file" class="d-none" {% if selected_lead.status == 'closed' %}disabled{% endif %}>
         </div>
       </form>
       {% else %}
@@ -250,77 +250,91 @@
 
 
 <script>
-  
-    document.addEventListener("DOMContentLoaded", function () {
-      const chatBox = document.getElementById("chat-box");
-      if (chatBox) {
-        chatBox.scrollTop = chatBox.scrollHeight;
-      }
-    });
-   
-  
-  
-  socket.on("message_status_update", function (data) {
-  const msgElement = document.querySelector(`.msg-status[data-id='${data.message_id}']`);
-  if (msgElement) {
-    msgElement.classList.remove("sent", "delivered", "read", "failed");
-    msgElement.classList.add(data.status);
-    msgElement.title = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-    msgElement.textContent = (data.status === "delivered" || data.status === "read") ? "✓✓" : "✓";
-    msgElement.style.color = "black";
-    console.log(`Message ${data.message_id} status updated to ${data.status}`);
+  document.addEventListener("DOMContentLoaded", function () {
+    
+    const chatBox = document.getElementById("chat-box");
+    const currentLeadId = parseInt(chatBox?.dataset.leadId)
+    console.log(currentLeadId)
+    const leadId = chatBox?.dataset.leadId;
+    console.log("Current lead ID:", leadId);
+
+  const form = document.getElementById("messageForm");
+  const input = document.getElementById("messageInput");
+  const fileInput = document.getElementById("file");
+
+  form?.addEventListener("submit", function (e) {
+  e.preventDefault();
+
+  const formData = new FormData(form);
+  const message = formData.get("message")?.trim();
+  const file = fileInput.files[0];
+
+  if (!message && !file) {
+    showFlash("❌ Please type a message or attach a file", "warning");
+    return;
   }
 
-  // ✅ Now check and update the message body if empty (e.g., image preview not shown yet)
-  const msgContentContainer = document.querySelector(`.message[data-id="${data.message_id}"] .msg-body`);
-  if (msgContentContainer && msgContentContainer.innerHTML.trim() === "") {
-    // Fetch full message content from server
-    fetch(`/user/api/message/${data.message_id}`)
-      .then(res => res.json())
-      .then(msg => {
-        if (msg.message_type === "image") {
-          msgContentContainer.innerHTML = `<img src="${msg.content}" alt="Image" style="max-width:220px;">`;
-        } else if (msg.message_type === "file") {
-          msgContentContainer.innerHTML = `<a href="${msg.content}" target="_blank">📎 View File</a>`;
-        } else {
-          msgContentContainer.textContent = msg.content;
+  const tempId = `temp-${Date.now()}`;
+  const now = new Date().toISOString();
+
+  const pendingMessage = {
+    id: tempId,
+    content: file ? URL.createObjectURL(file) : message,
+    sender: "rep",
+    timestamp: now,
+    message_type: file ? "image" : "text",
+    status: "pending"
+  };
+
+  appendMessageToChat(pendingMessage);
+
+  input.value = "";
+  fileInput.value = "";
+
+  fetch(`/user/lead/${leadId}/send`, {
+    method: "POST",
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+    body: formData
+  })
+    .then(async res => {
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        updateMessageStatus(tempId, "failed");
+        showFlash(data.error || "❌ Failed to send.", "danger");
+      }
+    })
+    .catch(() => {
+      updateMessageStatus(tempId, "failed");
+      showFlash("❌ Network error while sending message", "danger");
+    });
+
+      fileInput?.addEventListener("change", function () {
+        if (fileInput.files.length > 0) {
+          form.requestSubmit(); // auto send
         }
       });
-  }
-});
+    });
 
-document.addEventListener("click", function (e) {
-    if (e.target && e.target.classList.contains("preview-image")) {
-      const src = e.target.getAttribute("data-src") || e.target.getAttribute("src");
-      const previewImg = document.getElementById("preview-image");
-      previewImg.src = src;
-      $('#imagePreviewModal').modal('show');
-    }
+    fileInput?.addEventListener("change", () => {
+      if (fileInput.files.length > 0) form.requestSubmit();
+    });
+
   });
-  document.addEventListener("DOMContentLoaded", function () {
     const dropdown = document.querySelector(".lead-status-dropdown");
-    const successIcon = document.getElementById("success-icon");
-
-    dropdown.addEventListener("change", function () {
+    dropdown?.addEventListener("change", function () {
       const newStatus = this.value;
       const leadId = this.getAttribute("data-lead-id");
-
       fetch(`/user/lead/${leadId}/update-status`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus })
       })
-      .then(response => response.json())
+      .then(res => res.json())
       .then(data => {
         if (data.success) {
           const statusLabel = document.querySelector(`#lead-status-${leadId} .status-label`);
           const statusDot = document.querySelector(`#lead-status-${leadId} .status-dot`);
-
-          // Keep dropdown selected value in case of UI race or manual reversion
           dropdown.value = newStatus;
-
           if (statusLabel && statusDot) {
             statusLabel.textContent = newStatus.charAt(0).toUpperCase() + newStatus.slice(1);
             statusDot.style.backgroundColor = {
@@ -329,82 +343,50 @@ document.addEventListener("click", function (e) {
               closed: "#6c757d"
             }[newStatus] || "#dc3545";
           }
-          showFlash(`✅ Status changed to "${newStatus.charAt(0).toUpperCase() + newStatus.slice(1)}". Refreshing...`, "info");
+          showFlash(`✅ Status changed to "${newStatus}"`, "info");
           setTimeout(() => window.location.reload(), 2000);
-
-          // Disable/enable chat input immediately (optional pre-reload behavior)
-          if (newStatus === "closed") {
-            document.querySelector('input[name="message"]').disabled = true;
-            document.querySelector('button[type="submit"]').disabled = true;
-            document.querySelector('#file').disabled = true;
-            document.querySelector('label[for="file"]').classList.add("disabled");
-          } else {
-            document.querySelector('input[name="message"]').disabled = false;
-            document.querySelector('button[type="submit"]').disabled = false;
-            document.querySelector('#file').disabled = false;
-            document.querySelector('label[for="file"]').classList.remove("disabled");
-          }
         } else {
           alert("❌ Failed to update status: " + data.message);
         }
       })
-      .catch(error => {
-        console.error("❌ Status update error:", error);
-        console.error(error);
+      .catch(err => {
+        console.error("❌ Status update error:", err);
         alert("❌ Network error while updating status.");
       });
     });
-  });
 
-  
-  document.addEventListener("DOMContentLoaded", function () {
     const lazyImages = document.querySelectorAll("img[data-src]");
-
     const observer = new IntersectionObserver((entries, obs) => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           const img = entry.target;
           img.src = img.getAttribute("data-src");
-          
           img.removeAttribute("data-src");
           obs.unobserve(img);
         }
       });
-    }, {
-      rootMargin: "100px", // Preload a bit before it enters view
-      threshold: 0.01
-    });
-
+    }, { rootMargin: "100px", threshold: 0.01 });
     lazyImages.forEach(img => observer.observe(img));
+
     document.querySelectorAll(".retry-btn").forEach(button => {
       button.addEventListener("click", function () {
-        const messageId = this.dataset.messageId;
-        const content = this.dataset.content;
-        const messageType = this.dataset.messageType;
-
+        const { messageId, content, messageType } = button.dataset;
         fetch(`/user/retry-message/${messageId}`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            content: content,
-            message_type: messageType
-          })
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content, message_type: messageType })
         })
         .then(res => res.json())
         .then(data => {
           if (data.success) {
-            // Update message status visually
-            const messageRow = button.closest(".msg-row");
-            const statusContainer = messageRow.querySelector(".msg-time");
+            const statusContainer = button.closest(".msg-row").querySelector(".msg-time");
             if (statusContainer) {
               const newTick = document.createElement("span");
               newTick.className = "ml-2 text-muted font-weight-bold align-middle msg-status sent";
               newTick.title = "Sent";
               newTick.style = "font-size:1.05em;vertical-align:middle;color:black";
               newTick.textContent = "✓";
-              statusContainer.innerHTML = statusContainer.innerHTML.replace(/<.*?>.*?<\/.*?>/g, ''); // Remove old retry/fail icons
+              statusContainer.innerHTML = "";
               statusContainer.appendChild(newTick);
             }
           } else {
@@ -417,51 +399,205 @@ document.addEventListener("click", function (e) {
         });
       });
     });
-  });
-socket.on("unread_update", function(data) {
-  const leadId = data.lead_id;
-  const leadItems = document.querySelectorAll('.lead-item');
-  leadItems.forEach(item => {
-    if (item.getAttribute("data-lead-id") == leadId) {
-      const badge = item.querySelector(".badge");
-      if (data.unread_count > 0) {
-        if (badge) {
-          badge.innerText = data.unread_count;
-        } else {
-          const newBadge = document.createElement("span");
-          newBadge.className = "badge badge-primary";
-          newBadge.innerText = data.unread_count;
-          item.querySelector("a").appendChild(newBadge);
-        }
-      } else if (badge) {
-        badge.remove();
+
+    document.querySelectorAll(".preview-image").forEach(img => {
+    img.addEventListener("click", function () {
+      const modalImage = document.getElementById("preview-image");
+      const modal = document.getElementById("imagePreviewModal");
+
+      const src = this.getAttribute("data-src") || this.src;
+
+      if (modalImage && modal && src) {
+        modalImage.src = src;
+        $(modal).modal("show");
+      } else {
+        console.warn("❌ No image source found for preview.");
       }
+    });
+  });
+
+
+    socket.on("message_status_update", function (data) {
+      console.log("Updating message status:", data);
+  // First check if there's any temporary placeholder
+    const tempElement = document.querySelector(`[data-id^="temp-"]`);
+    if (tempElement) {
+      tempElement.setAttribute("data-id", data.message_id);  // Replace temp ID with real one
+    }
+
+    // Then update status of the correct message
+    const msgElement = document.querySelector(`.msg-status[data-id='${data.message_id}']`);
+    if (msgElement) {
+      msgElement.classList.remove("sent", "delivered", "read", "failed", "pending");
+      msgElement.classList.add(data.status);
+      msgElement.innerText = data.status === "sent"
+        ? "✓"
+        : (data.status === "delivered" || data.status === "read")
+          ? "✓✓"
+          : "❗";
+      msgElement.title = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+      msgElement.style.color = "black";
+  }
+});
+
+  socket.on("unread_update", function(data) {
+    const leadItems = document.querySelectorAll('.lead-item');
+    leadItems.forEach(item => {
+      if (item.getAttribute("data-lead-id") == data.lead_id) {
+        const badge = item.querySelector(".badge");
+        if (data.unread_count > 0) {
+          if (badge) {
+            badge.innerText = data.unread_count;
+          } else {
+            const newBadge = document.createElement("span");
+            newBadge.className = "badge badge-primary";
+            newBadge.innerText = data.unread_count;
+            item.querySelector("a").appendChild(newBadge);
+          }
+        } else if (badge) {
+          badge.remove();
+        }
+      }
+    });
+  });
+
+  socket.on("new_message", function(data) {
+    console.log("New message received:", data);
+    const chatBox = document.getElementById("chat-box");
+    const currentLeadId = parseInt(chatBox?.dataset.leadId);
+    if (currentLeadId === data.lead_id) {
+      appendMessageToChat(data.message);
+    } else {
+      showNewMessageToast(data.sender_name, data.message.content);
+      updateSidebarUnreadCount(data.lead_id, +1);
     }
   });
-});
-  // Flash message utility
+
   function showFlash(message, type = "info") {
     const container = document.getElementById("flash-message-container");
     container.className = `alert alert-${type} text-center`;
     container.textContent = message;
     container.classList.remove("d-none");
-    setTimeout(() => {
-      container.classList.add("d-none");
-    }, 3000);
+    setTimeout(() => container.classList.add("d-none"), 3000);
   }
-</script>
 
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const previewImages = document.querySelectorAll(".preview-image");
-    const modalImage = document.getElementById("modalImage");
+  function showNewMessageToast(senderName, content) {
+    const toast = document.createElement("div");
+    toast.className = "custom-toast shadow-sm";
 
-    previewImages.forEach(img => {
-      img.addEventListener("click", function () {
-        modalImage.src = this.getAttribute("data-src");
-      });
-    });
-  });
+    toast.innerHTML = `
+      <div class="toast-header bg-primary text-white d-flex justify-content-between align-items-center px-3 py-2 rounded-top">
+        <strong class="mr-auto">📩 ${senderName}</strong>
+        <small class="text-light ml-2">Now</small>
+      </div>
+      <div class="toast-body bg-white text-dark px-3 py-2 rounded-bottom">
+        ${content}
+      </div>
+    `;
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => toast.classList.add("show"), 100); // show animation
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 300);
+    }, 5000);
+}
+
+  function updateSidebarUnreadCount(leadId, incrementBy = 1) {
+    const leadItem = document.querySelector(`.lead-item[data-lead-id='${leadId}']`);
+    if (!leadItem) return;
+    const badge = leadItem.querySelector(".badge");
+    if (badge) {
+      let current = parseInt(badge.innerText) || 0;
+      badge.innerText = current + incrementBy;
+    } else {
+      const newBadge = document.createElement("span");
+      newBadge.className = "badge badge-primary";
+      newBadge.innerText = incrementBy;
+      leadItem.querySelector("a").appendChild(newBadge);
+    }
+  }
+
+  function appendMessageToChat(message) {
+  const chatBox = document.getElementById("chat-box");
+
+  const msgDiv = document.createElement("div");
+  msgDiv.className = `msg-row ${message.sender === "rep" ? "msg-rep justify-content-end" : "msg-user justify-content-start"} d-flex`;
+
+  const bubble = document.createElement("div");
+  bubble.className = `msg-bubble card px-3 py-2 mb-1 ${message.sender === "rep" ? "bg-primary text-white" : "bg-light text-dark"} border-0 shadow-sm`;
+  bubble.style.maxWidth = "75%";
+  bubble.style.borderRadius = "1.2rem";
+  bubble.style.wordBreak = "break-word";
+
+  const body = document.createElement("div");
+  body.className = "card-body p-0";
+
+  // ✅ Support text or image
+  if (message.message_type === "image") {
+    const img = document.createElement("img");
+    img.src = message.content;
+    img.className = "img-fluid rounded mb-2 preview-image";
+    img.style.maxHeight = "150px";
+    img.style.cursor = "pointer";
+    img.setAttribute("loading", "lazy");
+    img.setAttribute("data-src", message.content);
+    img.addEventListener("click", () => {
+   const modalImage = document.getElementById("preview-image");
+   const modal = document.getElementById("imagePreviewModal");
+  if (modalImage && modal) {
+    modalImage.src = message.content;
+    $(modal).modal("show");
+  }
+});
+    body.appendChild(img);
+  } else {
+    const contentSpan = document.createElement("span");
+    contentSpan.className = "d-block";
+    contentSpan.style.whiteSpace = "pre-line";
+    contentSpan.innerText = message.content;
+    body.appendChild(contentSpan);
+  }
+
+  // ⏰ Timestamp + Status
+  const timeDiv = document.createElement("div");
+  timeDiv.className = "msg-time d-flex align-items-center mt-1 small";
+  timeDiv.style.fontSize = "0.92em";
+
+  const timeSpan = document.createElement("span");
+  timeSpan.className = "mr-2 text-nowrap";
+  timeSpan.style.opacity = "0.75";
+  timeSpan.textContent = new Date(message.timestamp).toLocaleTimeString();
+
+  const statusSpan = document.createElement("span");
+  statusSpan.className = `ml-2 msg-status ${message.status}`;
+  statusSpan.setAttribute("data-id", message.id);
+  statusSpan.innerText =
+    message.status === "sent"
+      ? "✓"
+      : message.status === "delivered" || message.status === "read"
+      ? "✓✓"
+      : message.status === "failed"
+      ? "❗"
+      : "Sending...";
+
+  timeDiv.appendChild(timeSpan);
+  timeDiv.appendChild(statusSpan);
+
+  body.appendChild(timeDiv);
+  bubble.appendChild(body);
+  msgDiv.appendChild(bubble);
+  chatBox.appendChild(msgDiv);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+function updateMessageStatus(id, status) {
+  const el = document.querySelector(`.msg-status[data-id='${id}']`);
+  if (el) {
+    el.className = `ml-2 msg-status ${status}`;
+    el.innerText = status === "sent" ? "✓" : status === "delivered" || status === "read" ? "✓✓" : "❗";
+    el.title = status.charAt(0).toUpperCase() + status.slice(1);
+  }
+}
 </script>
-  
 {% endblock scripts %}
