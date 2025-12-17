@@ -8,6 +8,7 @@ from datetime import datetime
 from app import socketio
 from app.celery_app import celery
 from app.services.task import detect_meeting_intent
+from app.log_config import log_action
 # 
 
 
@@ -25,88 +26,69 @@ def verify_webhook():
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
+
     if mode == "subscribe" and token == VERIFY_TOKEN:
-        print("✅ Webhook Verified")
+        log_action("Webhook verified successfully", actor_type="system", action_type="webhook-verify")
         return challenge, 200
+    log_action("Webhook verification failed", actor_type="system", action_type="webhook-verify", level="warning")
     return "Forbidden", 403
-
-
-# @webhook_bp.route("/instagram", methods=["GET"])
-# @webhook_bp.route("instagram", methods=["GET"])
-# def verify_webhook():
-#     mode = request.args.get("hub.mode")
-#     token = request.args.get("hub.verify_token")
-#     challenge = request.args.get("hub.challenge")
-#     if mode == "subscribe" and token == VERIFY_TOKEN:
-#         print("✅ Webhook Verified")
-#         return challenge, 200
-#     return "Forbidden", 403
 
 
 @webhook_bp.route("massenger", methods=["POST"])
 @webhook_bp.route("/massenger", methods=["POST"])
 def handle_webhook():
-    
-    print("🚀 Webhook hit!")
     body = request.get_json()
-    print("📩 Webhook payload received:", body)
-    
+    print(body)
+    log_action("Webhook payload received", actor_type="system", action_type="webhook-payload")
 
     if not body:
+        log_action("Empty or invalid webhook payload", actor_type="system", action_type="webhook-error", level="error")
         return jsonify({"error": "Empty or invalid payload"}), 400
 
-    platform = body.get("object")  # 'page' for Messenger, 'instagram' for IG
+    platform = body.get("object")
 
     for entry in body.get("entry", []):
         page_id = entry.get("id")
 
         if platform in ["page", "instagram"]:
             for event in entry.get("messaging", []):
-                if "message" in event and event["message"].get("is_echo"):
-                    platform_mid = event["message"]["mid"]
-                    db = current_app.extensions['sqlalchemy'].session
-                    try:
+                try:
+                    # Echo handling
+                    if "message" in event and event["message"].get("is_echo"):
+                        platform_mid = event["message"]["mid"]
+                        db = current_app.extensions['sqlalchemy'].session
                         msg = db.query(LeadMessage).filter_by(platform_message_id=platform_mid).first()
                         if msg:
                             msg.status = "sent"
                             db.commit()
-                            room = f"user_{msg.lead.sales_rep.user_id}"
                             socketio.emit("message_status_update", {
                                 "message_id": msg.id,
                                 "status": "sent"
-                            }, to=room)
-                    except Exception as e:
-                        db.rollback()
-                        print("❌ Echo DB error:", e)
-                    finally:
+                            }, to=f"user_{msg.lead.sales_rep.user_id}")
+                            log_action(f"Echo message marked as sent: {platform_mid}", actor_type="system", action_type="echo")
                         db.close()
-                    continue
-            
-                if "delivery" in event:
-                    for mid in event["delivery"].get("mids", []):
-                        db = current_app.extensions['sqlalchemy'].session
-                        try:
+                        continue
+
+                    # Delivery receipts
+                    if "delivery" in event:
+                        for mid in event["delivery"].get("mids", []):
+                            db = current_app.extensions['sqlalchemy'].session
                             msg = db.query(LeadMessage).filter_by(platform_message_id=mid).first()
                             if msg:
                                 msg.status = "delivered"
                                 db.commit()
-                                room = f"user_{msg.lead.sales_rep.user_id}"
                                 socketio.emit("message_status_update", {
                                     "message_id": msg.id,
-                                    "status": msg.status
-                                }, to=room)
-                        except Exception as e:
-                            db.rollback()
-                            print("❌ Delivery DB error:", e)
-                        finally:
+                                    "status": "delivered"
+                                }, to=f"user_{msg.lead.sales_rep.user_id}")
+                                log_action(f"Message marked as delivered: {mid}", actor_type="system", action_type="delivery")
                             db.close()
-                    continue
+                        continue
 
-                # 🔁 Handle read receipts
-                if "read" in event:
-                    sender_id = event["sender"]["id"]
-                    db = current_app.extensions['sqlalchemy'].session
-                    try:
+                    # Read receipts
+                    if "read" in event:
+                        sender_id = event["sender"]["id"]
+                        db = current_app.extensions['sqlalchemy'].session
                         lead = db.query(Lead).filter_by(external_user_id=sender_id).first()
                         if lead:
                             messages = db.query(LeadMessage).filter_by(lead_id=lead.id, sender="rep", status="delivered").all()
@@ -114,88 +96,69 @@ def handle_webhook():
                                 msg.status = "read"
                                 msg.read_at = datetime.now()
                             db.commit()
-                    except Exception as e:
-                        db.rollback()
-                        print("❌ Read DB error:", e)
-                    finally:
+                            log_action(f"Messages marked as read for lead {lead.id}", actor_type="system", action_type="read")
                         db.close()
-                    continue
-                
-
-                # 🎯 Only process if there is actual message content
-                message = event.get("message", {})
-
-                # Detect and extract the message type
-                content = None
-                message_type = None
-
-                if "text" in message:
-                    content = message["text"]
-                    message_type = "text"
-
-                elif "attachments" in message:
-                    attachment = message["attachments"][0]
-                    attachment_type = attachment.get("type")
-                    
-                    if attachment_type == "image":
-                        content = attachment["payload"]["url"]
-                        message_type = "image"
-                    elif attachment_type == "file":
-                        content = attachment["payload"]["url"]
-                        message_type = "file"
-                    else:
-                        print(f"❌ Unsupported attachment type '{attachment_type}'. Skipping.")
                         continue
 
-                if not content or not message_type:
-                    print("❌ No valid content found in message. Skipping.")
-                    continue
+                    # Get message content
+                    message = event.get("message", {})
+                    content = None
+                    message_type = None
 
-                # 🎯 Pass it for further processing
-                db = current_app.extensions['sqlalchemy'].session
-                try:
-                    company = db.query(Company).filter_by(messenger_page_id=page_id).first() if platform == "page" else \
-                            db.query(Company).filter_by(instagram_page_id=page_id).first()
+                    if "text" in message:
+                        content = message["text"]
+                        message_type = "text"
+                    elif "attachments" in message:
+                        attachment = message["attachments"][0]
+                        if attachment.get("type") in ["image", "file"]:
+                            content = attachment["payload"]["url"]
+                            message_type = attachment["type"]
+                        else:
+                            log_action(f"Unsupported attachment type: {attachment.get('type')}", level="warning", actor_type="system")
+                            continue
 
+                    if not content or not message_type:
+                        log_action("No valid content in message", actor_type="system", level="warning")
+                        continue
+
+                    # Process message
+                    db = current_app.extensions['sqlalchemy'].session
+                    if platform == "page":
+                        company = db.query(Company).filter(Company.messenger_page_id == page_id.strip()).first()
+                    elif platform == "instagram":
+                        company = db.query(Company).filter(Company.instagram_page_id == page_id.strip()).first()
+                        instagram_id = company.instagram_page_id
+                    else:
+                        company = None
                     if not company:
-                        print(f"❌ No company found for page_id: {page_id}")
+                        log_action(f"No company found for page_id: {page_id}", level="error", actor_type="system")
                         return jsonify({"error": "Company not found"}), 400
 
                     access_token = company.messenger_access_token if platform == "page" else company.instagram_access_token
+                    print("this is access token")
+                    print(access_token)
 
                     if platform == "page":
-                        handle_messenger_event(
-                            event,
-                            page_id,
-                            lead_platform="messenger",
-                            content=content,
-                            message_type=message_type,
-                            access_token=access_token
-                        )
+                        handle_messenger_event(event, page_id, "messenger", content, message_type, access_token)
                     elif platform == "instagram":
-                        handle_instagram_event(
-                            event,
-                            page_id,
-                            lead_platform="instagram",
-                            content=content,
-                            message_type=message_type,
-                            access_token=access_token
-                        )
-                finally:
-                    db.close()
-               
+                        handle_instagram_event(event, page_id, "instagram", content, message_type, access_token,instagram_id)
+
+                except Exception as e:
+                    log_action("Unhandled exception in webhook event loop", level="error", actor_type="system", exc_info=True)
 
     return jsonify({"status": "received"}), 200
 
     
 
-def handle_messenger_event(event, page_id, lead_platform, content, message_type,access_token):
-    print(f"📥 Incoming message type: {message_type}")
-    sender_id = event["sender"]["id"]
-    # print(f"📩 Messenger: {session["sales_rep_id"]}")
 
-    user_name = get_lead_name(sender_id,platform="messenger",access_token=access_token)
+
+def handle_messenger_event(event, page_id, lead_platform, content, message_type, access_token):
+    sender_id = event["sender"]["id"]
+    log_action(f"📥 Incoming message [{message_type}] from {sender_id}", actor_type="system", action_type="message-received")
+
+    user_name = get_lead_name(sender_id, platform="messenger", access_token=access_token)
     if not user_name:
+        log_action(f"❌ Could not fetch name for sender {sender_id}", level="warning", actor_type="system")
         return
 
     try:
@@ -205,7 +168,7 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type,
         lead = db.query(Lead).filter_by(external_user_id=sender_id).first()
 
         if not lead:
-            # 🔍 Identify company by platform and page_id
+            # 🔍 Identify company
             company_filter = {
                 "messenger": Company.messenger_page_id == page_id,
                 "instagram": Company.instagram_page_id == page_id
@@ -214,19 +177,19 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type,
             company = db.query(Company).filter(company_filter.get(lead_platform)).first()
 
             if not company:
-                print(f"❌ No company found for {lead_platform} page_id: {page_id}")
+                log_action(f"❌ No company found for {lead_platform} page_id: {page_id}", level="error", actor_type="system")
                 return
 
-            # 🎯 Assign sales rep from that company
             assigned_rep = get_next_sales_rep(db, company.id)
             if not assigned_rep:
-                print(f"⚠️ No sales reps available for company {company.name}")
+                log_action(f"⚠️ No sales reps available for company {company.name}", level="warning", actor_type="system")
                 return
+
             lead = Lead(
                 external_user_id=sender_id,
                 platform=lead_platform,
                 name=user_name,
-                message=content,  # Save first message content
+                message=content,
                 sales_rep_id=assigned_rep.id,
                 ad_repr="Messenger",
                 assigned_at=datetime.now(),
@@ -235,13 +198,13 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type,
             )
             db.add(lead)
             db.commit()
-            print("🆕 New lead created.")
-
+            log_action(f"🆕 New lead created for {user_name} and assigned to rep {assigned_rep.id}", actor_type="system", action_type="lead-created")
         else:
             lead.last_active_at = datetime.now()
             db.commit()
+            log_action(f"👀 Existing lead {lead.id} updated last_active_at", actor_type="system", action_type="lead-touch")
 
-        # Save message
+        # 💬 Save message
         new_message = LeadMessage(
             lead_id=lead.id,
             sender="user",
@@ -252,12 +215,42 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type,
         )
         db.add(new_message)
         db.commit()
-        print("before this")
-        detect_meeting_intent.delay(lead.id,content)
+        log_action(f"✅ Message saved for lead {lead.id}", actor_type="user", user_id=lead.id, action_type="message-save")
 
-        room = f"user_{lead.sales_rep.user_id}" 
-        print(f"this is {room}")
-        # Emit to socket for real-time update
+        # 🧠 Trigger meeting detection via Celery
+        detect_meeting_intent.delay(lead.id, content)
+        log_action(f"🧠 Celery task dispatched for lead {lead.id}", actor_type="system", action_type="meeting-intent")
+
+        # 🔊 Emit new message to socket room
+        if not lead.sales_rep or not lead.sales_rep.user:
+    # 🧠 Find the company based on page_id and platform
+            company_filter = {
+                "messenger": Company.messenger_page_id == page_id,
+                "instagram": Company.instagram_page_id == page_id
+            }
+
+            company = db.query(Company).filter(company_filter.get(lead_platform)).first()
+
+            reassigned_rep = get_next_sales_rep(db, company.id) if company else None
+            if reassigned_rep:
+                lead.sales_rep_id = reassigned_rep.id
+                db.commit()
+                log_action(
+                    f"✅ Lead {lead.id} reassigned to rep {reassigned_rep.id}",
+                    actor_type="system",
+                    action_type="lead-reassigned"
+                )
+            else:
+                log_action(
+                    f"❌ No sales reps available for reassignment. Lead {lead.id} remains unassigned.",
+                    level="error",
+                    actor_type="system",
+                    action_type="reassign-failed"
+                )
+                return  # 💥 Cannot continue without a valid rep
+
+        # ✅ Emit to socket after ensuring rep assignment
+        room = f"user_{lead.sales_rep.user_id}"
         socketio.emit("new_message", {
             "lead_id": str(lead.id),
             "sender": "user",
@@ -266,9 +259,9 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type,
             "message_type": message_type,
             "timestamp": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }, to=room)
+        log_action(f"📡 New message emitted to room {room}", actor_type="system", action_type="socket-emit")
 
-
-        # Save notification
+        # 🔔 Save notification
         notification = Notification(
             sender_name=lead.name,
             platform=lead.platform,
@@ -276,9 +269,9 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type,
         )
         db.add(notification)
         db.commit()
+        log_action(f"🔔 Notification created for lead {lead.id}", actor_type="system", action_type="notify")
 
-
-        # Unread count emit
+        # 🔄 Update unread count
         unread_messages = db.query(LeadMessage).filter_by(
             lead_id=lead.id,
             sender="user",
@@ -289,46 +282,45 @@ def handle_messenger_event(event, page_id, lead_platform, content, message_type,
             "lead_id": str(lead.id),
             "unread_count": len(unread_messages)
         }, to=room)
+        log_action(f"🔁 Unread count emitted: {len(unread_messages)}", actor_type="system", action_type="unread-update")
 
     except Exception as e:
-        print("❌ Error handling Messenger event:", str(e))
         db.rollback()
+        log_action("❌ Error handling Messenger event", level="error", actor_type="system", exc_info=True)
     finally:
         db.close()
-
     # db.session.commit()
     # send_message(sender_id, f"Hi {user_name}, thanks for messaging us!")
 
 
-def handle_instagram_event(event, page_id, lead_platform, content, message_type,access_token):
-    print(f"📥 Incoming Instagram message type: {message_type}")
+def handle_instagram_event(event, page_id, lead_platform, content, message_type, access_token,instagram_id):
     sender_id = event["sender"]["id"]
+    log_action(f"📥 Incoming Instagram message type: {message_type} from {sender_id}", actor_type="system", action_type="message-received")
 
     try:
         db_instance = current_app.extensions['sqlalchemy']
         db = db_instance.session
 
-        # 🔍 Identify company by Instagram page_id
+        # 🔍 Find company by page_id
         company = db.query(Company).filter(Company.instagram_page_id == page_id).first()
-
         if not company:
-            print(f"❌ No company found for Instagram page_id: {page_id}")
+            log_action(f"❌ No company found for Instagram page_id: {page_id}", level="error", actor_type="system")
             return
 
-        
-
-        # 👤 Get the username of sender using IG Graph API
-        user_name = get_lead_name(sender_id, platform="instagram", access_token=access_token)
+        # 👤 Get sender name
+        user_name = get_lead_name(sender_id, platform="instagram",access_token=access_token,instagram_id=instagram_id)
         if not user_name:
+            log_action(f"⚠️ Could not fetch name for Instagram sender {sender_id}", level="warning", actor_type="system")
             return
 
-        # 🔎 Check if lead already exists
+        # 🔍 Check if lead exists
         lead = db.query(Lead).filter_by(external_user_id=sender_id).first()
 
         if not lead:
+            # ➕ Create new lead
             assigned_rep = get_next_sales_rep(db, company.id)
             if not assigned_rep:
-                print(f"⚠️ No sales reps available for company {company.name}")
+                log_action(f"⚠️ No sales reps available for company {company.name}", level="warning", actor_type="system")
                 return
 
             lead = Lead(
@@ -344,10 +336,12 @@ def handle_instagram_event(event, page_id, lead_platform, content, message_type,
             )
             db.add(lead)
             db.commit()
-            print("🆕 New Instagram lead created.")
+            log_action(f"🆕 New Instagram lead created and assigned to rep {assigned_rep.id}", actor_type="system", action_type="lead-created")
         else:
+            # 🕒 Update activity
             lead.last_active_at = datetime.now()
             db.commit()
+            log_action(f"👀 Instagram lead {lead.id} updated last_active_at", actor_type="system", action_type="lead-touch")
 
         # 💬 Save message
         new_message = LeadMessage(
@@ -360,12 +354,36 @@ def handle_instagram_event(event, page_id, lead_platform, content, message_type,
         )
         db.add(new_message)
         db.commit()
+        log_action(f"✅ Message saved for lead {lead.id}", actor_type="user", user_id=lead.id, action_type="message-save")
 
+        # 🧠 Intent detection
         detect_meeting_intent.delay(lead.id, content)
+        log_action(f"🧠 Celery task dispatched for lead {lead.id}", actor_type="system", action_type="meeting-intent")
 
-        room = f"user_{lead.sales_rep.user_id}"
-        print(f"📸 Instagram message routed to room: {room}")
+        # 🚨 Reassignment if rep deleted
+        if not lead.sales_rep or not lead.sales_rep.user_id:
+            reassigned_rep = get_next_sales_rep(db, company.id)
+            if reassigned_rep:
+                lead.sales_rep_id = reassigned_rep.id
+                db.commit()
+                log_action(
+                    f"✅ Lead {lead.id} reassigned to rep {reassigned_rep.id}",
+                    actor_type="system",
+                    action_type="lead-reassigned"
+                )
+                room = f"user_{reassigned_rep.user_id}"
+            else:
+                log_action(
+                    f"❌ No reps available to reassign Instagram lead {lead.id}",
+                    level="error",
+                    actor_type="system",
+                    action_type="reassign-failed"
+                )
+                return
+        else:
+            room = f"user_{lead.sales_rep.user_id}"
 
+        # 📡 Emit message to rep
         socketio.emit("new_message", {
             "lead_id": str(lead.id),
             "sender": "user",
@@ -374,7 +392,9 @@ def handle_instagram_event(event, page_id, lead_platform, content, message_type,
             "message_type": message_type,
             "timestamp": datetime.now().strftime("%d %b %Y, %I:%M %p")
         }, to=room)
+        log_action(f"📡 New message emitted to room {room}", actor_type="system", action_type="socket-emit")
 
+        # 🔔 Notification
         notification = Notification(
             sender_name=lead.name,
             platform=lead.platform,
@@ -382,7 +402,9 @@ def handle_instagram_event(event, page_id, lead_platform, content, message_type,
         )
         db.add(notification)
         db.commit()
+        log_action(f"🔔 Notification created for lead {lead.id}", actor_type="system", action_type="notify")
 
+        # 🔄 Unread update
         unread_messages = db.query(LeadMessage).filter_by(
             lead_id=lead.id,
             sender="user",
@@ -393,9 +415,10 @@ def handle_instagram_event(event, page_id, lead_platform, content, message_type,
             "lead_id": str(lead.id),
             "unread_count": len(unread_messages)
         }, to=room)
+        log_action(f"🔁 Unread count emitted: {len(unread_messages)}", actor_type="system", action_type="unread-update")
 
-    except Exception as e:
-        print("❌ Error handling Instagram event:", str(e))
+    except Exception:
         db.rollback()
+        log_action("❌ Error handling Instagram event", level="error", actor_type="system", exc_info=True)
     finally:
         db.close()

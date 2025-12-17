@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 import pytz
 from pytz import timezone
 from sqlalchemy.orm import joinedload
+from app.log_config import log_action
+
 
 
 @user_bp.route('/')
@@ -76,6 +78,12 @@ def index():
             meeting.local_time = meeting.meeting_time_utc.astimezone(rep_tz)
 
     finally:
+        log_action(
+            message="Viewed User Dashboard",
+            user_id=session.get("user_id"),
+            
+
+        )
         session_db.close()
 
     return render_template(

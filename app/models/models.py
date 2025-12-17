@@ -89,7 +89,7 @@ class LeadMessage(db.Model):
 
     lead = db.relationship("Lead", backref="messages")
 
-class LeadStatusHistory(db.Model):
+class LeadStatusHistory(db.Model): 
     __tablename__ = "lead_status_history"
 
     id = Column(Integer, primary_key=True)

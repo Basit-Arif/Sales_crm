@@ -1,11 +1,20 @@
 {% extends "admin/base_admin.html" %}
 {% block content %}
 <div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>Companies</h2>
-        <!-- Add Company Trigger Button -->
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCompanyModal">+ Add Company</button>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">Companies</h2>
+    <div class="d-flex gap-2">
+      <!-- Add Company Trigger Button -->
+      <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addCompanyModal">
+        + Add Company
+      </button>
+  
+      <!-- Facebook + Instagram Connect Button -->
+      <a href="{{ url_for('admin.connect_facebook') }}" class="btn btn-primary">
+        Connect Facebook + Instagram Pages
+      </a>
     </div>
+  </div>
 
     {% if companies %}
     <table class="table table-bordered table-striped">
@@ -17,6 +26,7 @@
                 <th>Messenger Token</th>
                 <th>Instagram Token</th>
                 <th>Actions</th>
+                <th>Platforms</th>  
             </tr>
         </thead>
         <tbody>
@@ -49,6 +59,10 @@
                 Delete
                 </button>
                 </td>
+                <td>
+                  {% if company.messenger_page_id %}📘 Facebook{% endif %}
+                  {% if company.instagram_page_id %} 📸 Instagram{% endif %}
+                </td>
                 
             </tr>
             {% endfor %}
@@ -60,6 +74,8 @@
 </div>
 
 <!-- Add Company Modal -->
+
+
 <!-- Add Company Modal -->
 <div class="modal fade" id="addCompanyModal" tabindex="-1" aria-labelledby="addCompanyModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -67,6 +83,7 @@
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title" id="addCompanyModalLabel">Add Company</h5>
+            
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
   

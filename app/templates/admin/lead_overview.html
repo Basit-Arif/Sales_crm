@@ -23,7 +23,13 @@
         <td>
           {{ lead.name }}
           {% if lead.has_new_message_after_summary %}
-            <span class="ms-1 text-danger" title="New messages after summary"><i class="fas fa-circle" style="font-size: 0.6rem;"></i></span>
+            <!-- Red dot with click to fetch summary -->
+            <button 
+              class="btn btn-sm p-0 ms-1 fetch-summary-btn" 
+              title="Fetch updated summary"
+              data-lead-id="{{ lead.id }}">
+              <i class="fas fa-circle text-danger" style="font-size: 0.6rem;"></i>
+            </button>
           {% endif %}
           {% if selected_company == 'all' and lead.sales_rep and lead.sales_rep.company %}
             <br><small class="text-muted">({{ lead.sales_rep.company.name }})</small>
@@ -70,3 +76,43 @@
   </table>
 </div>
 {% endblock %}
+{% block scripts %}
+<script>
+  async function regenerateSummary(leadId, buttonEl) {
+    buttonEl.disabled = true;
+    buttonEl.innerText = '⏳ Regenerating...';
+
+    try {
+      const response = await fetch(`/admin/lead/${leadId}/regenerate-summary`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          s  // if using CSRF protection
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        buttonEl.innerText = '✅ Summary Requested';
+        buttonEl.classList.remove('btn-danger');
+        buttonEl.classList.add('btn-success');
+      } else {
+        buttonEl.innerText = '❌ Failed';
+        buttonEl.classList.remove('btn-danger');
+        buttonEl.classList.add('btn-warning');
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      buttonEl.innerText = '⚠️ Error';
+    } finally {
+      setTimeout(() => {
+        buttonEl.disabled = false;
+        buttonEl.innerText = '♻️ Refresh Summary';
+        buttonEl.classList.remove('btn-success', 'btn-warning');
+        buttonEl.classList.add('btn-outline-danger');
+      }, 5000);
+    }
+  }
+</script>
+{% endblock scripts %}

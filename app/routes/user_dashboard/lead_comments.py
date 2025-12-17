@@ -14,7 +14,7 @@ from app.services.meeting import schedule_pre_meeting_reminders
 from app import db 
 from app.routes.user_dashboard import user_bp
 from app.routes.auth import login_required
-
+from app.log_config import log_action
 
 
 @user_bp.route("/lead/<int:lead_id>/add-comment", methods=["POST"])
@@ -22,7 +22,6 @@ def add_lead_comment(lead_id):
     session_db = db.session
     try:
         content = request.form.get("content")
-
         if not content:
             flash("Comment cannot be empty.", "danger")
             return redirect(request.referrer)
@@ -31,21 +30,36 @@ def add_lead_comment(lead_id):
             lead_id=lead_id,
             content=content,
             summary_date=datetime.now(pytz.timezone("Asia/Karachi")),
-            generated_by=session["role"],
+            generated_by=session.get("role", "user"),
         )
         session_db.add(comment)
         session_db.commit()
 
+        log_action(
+            message=f"Comment added to lead #{lead_id}",
+            user_id=session.get("user_id"),
+            actor_type=session.get("role", "user"),
+            action_type="add-comment"
+        )
+
         flash("✅ Comment added successfully!", "success")
         return redirect(request.referrer)
 
-    except Exception as e:
+    except Exception:
         session_db.rollback()
-        print("❌ Error adding comment:", e)
+        log_action(
+            message=f"❌ Failed to add comment to lead #{lead_id}",
+            user_id=session.get("user_id"),
+            actor_type=session.get("role", "user"),
+            action_type="comment-error",
+            level="error",
+            exc_info=True
+        )
         flash("❌ Something went wrong while adding the comment.", "danger")
         return redirect(request.referrer)
     finally:
         session_db.close()
+
 
 
 @user_bp.route("/lead/<int:lead_id>/comments")

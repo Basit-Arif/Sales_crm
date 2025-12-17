@@ -193,3 +193,41 @@ def override_lead(lead_id):
         return redirect(url_for("user.view_chat", lead_id=lead_id, platform=lead.platform))
     finally:
         db.close()
+from flask import jsonify
+
+@admin_bp.route("/lead/<int:lead_id>/regenerate-summary", methods=["POST"])
+def regenerate_summary(lead_id):
+    from app.routes.admin_dashboard import log_action
+    try:
+        db = get_db()
+        lead = db.query(Lead).filter_by(id=lead_id).first()
+
+        if not lead:
+            return jsonify({"success": False, "message": "Lead not found"}), 404
+
+        # Use lead.last_active_at as the summary date
+        last_active_date = lead.last_active_at or datetime.utcnow()
+
+        # Trigger the summary generation task
+        summarize_leads_for_date.delay(lead_id=lead.id, summary_date=str(last_active_date))
+
+        return jsonify({
+            "success": True,
+            "message": f"🧠 Summary task queued for lead {lead.name}"
+        })
+
+    except Exception as e:
+
+        # Optional: log exception
+        print("❌ Error during summary regeneration:", str(e))
+        log_action(
+            f"❌ Error regenerating summary for lead {lead_id}",
+            level="error",
+            exc_info=True,
+            actor_type="admin",
+            action_type="summary-failed"
+        )
+        return jsonify({
+            "success": False,
+            "message": "Failed to regenerate summary"
+        }), 500

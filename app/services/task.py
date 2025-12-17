@@ -12,6 +12,7 @@ from dateutil import parser
 from collections import defaultdict
 import re
 from app.services.whatsapp_services import send_meeting_reminder_function
+from app.log_config import log_action
 
 
 # replace with your actual Flask app engine
@@ -96,7 +97,8 @@ class MessageBuffer:
 buffer = MessageBuffer()
 
 def detect_meeting_intent_local(lead_id: int, message_content: str):
-    print("in detect")
+    log_action(f"📥 Detecting meeting intent for lead {lead_id}", user_id=lead_id, action_type="meeting_detection")
+
     session = db.session
     try:
         messages = (
@@ -114,26 +116,24 @@ def detect_meeting_intent_local(lead_id: int, message_content: str):
 
         if is_meeting_related(combined_message):
             result = extract_meeting_time_llm(combined_message)
-            print("Regex Result:", result)
+            log_action(f"📊 Regex LLM Extracted: {result}", user_id=lead_id, action_type="regex_meeting_extract")
 
             try:
                 response = requests.post("https://crmceo.com/ai/process", json={
                     "lead_message": combined_message,
                     "lead_id": lead_id
                 })
-
-                print("Status Code:", response.status_code)
-                print("Raw Response:", response.text)
+                log_action(f"🌐 Sent to AI API. Status: {response.status_code}", user_id=lead_id)
 
                 if response.ok:
                     data = response.json()
-                    print("LLM Result:", data)
+                    log_action(f"🧠 AI API response: {data}", user_id=lead_id, action_type="ai_response")
                 else:
-                    print("❌ API returned error")
+                    log_action(f"❌ AI API returned error {response.text}", user_id=lead_id, level="error")
 
             except Exception as e:
-                print("❌ Request failed:", e)
-               
+                log_action("❌ Failed to call AI API", user_id=lead_id, level="error", exc_info=True)
+
             if result['confidence'] >= 0.8:
                 lead = session.query(Lead).get(lead_id)
                 meeting_time = parser.parse(f"{result['date']} {result['time_string']}")
@@ -149,9 +149,11 @@ def detect_meeting_intent_local(lead_id: int, message_content: str):
                 session.add(new_meeting)
                 session.commit()
                 buffer.clear(str(lead_id))
-                print("Meeting created:", new_meeting.id)
+                log_action(f"✅ Meeting created with ID {new_meeting.id}", user_id=lead_id, action_type="meeting_created")
+
     except Exception as e:
-        print("❌ Error:", e)
+        session.rollback()
+        log_action("🔥 Critical error during local meeting detection", user_id=lead_id, level="error", exc_info=True)
     finally:
         session.close()
 
@@ -165,10 +167,11 @@ def detect_meeting_intent(lead_id: int, message_content: str):
     from app import create_app
     app = create_app()
     session = db.session
+
     with app.app_context():
+        log_action(f"🎯 Celery task started for lead {lead_id}", user_id=lead_id, actor_type="system", action_type="meeting_detection")
+
         try:
-            print(f"🎯 Task started for lead: {lead_id}")
-            print(f"session id: {session}")
             messages = (
                 session.query(LeadMessage)
                 .filter_by(lead_id=lead_id)
@@ -179,9 +182,9 @@ def detect_meeting_intent(lead_id: int, message_content: str):
             text_msgs = [m.content for m in reversed(messages) if m.message_type == "text"]
             combined = " ".join(text_msgs)
 
-            print("Combined text:", combined)
+            log_action("📝 Combined lead messages for detection", user_id=lead_id, action_type="combine_text", message=combined)
 
-            # Fake detection
+            # Call AI detection API
             response = requests.post("https://crmceo.com/ai/process", json={
                 "lead_message": combined,
                 "lead_id": lead_id
@@ -190,8 +193,10 @@ def detect_meeting_intent(lead_id: int, message_content: str):
             result = response.json().get("response", {})
 
             if not result.get("meeting_intent"):
+                log_action("❌ No meeting intent detected", user_id=lead_id)
                 return
 
+            # Convert time to UTC
             local_naive = parser.parse(f"{result['meeting_date']} {result['meeting_time']}")
             client_tz = pytz.timezone(result.get("timezone", "Asia/Karachi"))
             localized = client_tz.localize(local_naive)
@@ -199,7 +204,7 @@ def detect_meeting_intent(lead_id: int, message_content: str):
 
             lead = session.query(Lead).get(lead_id)
             if not lead:
-                print("Lead not found")
+                log_action("❌ Lead not found", user_id=lead_id, level="error")
                 return
 
             meeting = Meeting(
@@ -216,10 +221,11 @@ def detect_meeting_intent(lead_id: int, message_content: str):
             session.add(meeting)
             session.commit()
 
-            print("✅ Meeting saved")
+            log_action(f"✅ Meeting saved for lead {lead_id}", user_id=lead_id, action_type="meeting_created")
+
         except Exception as e:
-            print("❌ Internal error:", e)
             session.rollback()
+            log_action("🔥 Celery task error", user_id=lead_id, level="error", exc_info=True)
         finally:
             session.close()
 # @celery.task(name="detect_meeting_intent")
@@ -243,24 +249,24 @@ from pytz import timezone
 
 @celery.task(name="summarize_leads_for_date")
 def summarize_leads_for_date(lead_id: int, summary_date: str):
-    print('hello')
     from app import create_app
-        
     from pytz import timezone
-    print("hello")
+
     app = create_app()
     session = db.session
+
     with app.app_context():
+        log_action("📌 Celery summarization task started", user_id=lead_id, actor_type="system", action_type="summarize_lead")
+
         try:
             date_obj = datetime.strptime(summary_date, "%Y-%m-%d").date()
             tz = timezone("Asia/Karachi")
             start_of_day = tz.localize(datetime.combine(date_obj, datetime.min.time())).astimezone(pytz.utc)
             end_of_day = tz.localize(datetime.combine(date_obj, datetime.max.time())).astimezone(pytz.utc)
 
-            # Check the latest message timestamp
             latest_msg = session.query(LeadMessage).filter_by(lead_id=lead_id).order_by(LeadMessage.timestamp.desc()).first()
             if latest_msg and latest_msg.timestamp.astimezone(pytz.utc) > end_of_day:
-                print("⏩ Skipping summary: newer message exists after target summary date.")
+                log_action("⏩ Skipping summary: Newer message exists", user_id=lead_id)
                 return
 
             messages = session.query(LeadMessage).filter(
@@ -270,16 +276,17 @@ def summarize_leads_for_date(lead_id: int, summary_date: str):
             ).order_by(LeadMessage.timestamp.asc()).all()
 
             if not messages:
-                print("⚠️ No messages found for this date. Skipping summarization.")
+                log_action("⚠️ No messages found for this date", user_id=lead_id)
                 return
-            print(f"📅 Summarizing messages for lead {lead_id} on {summary_date}")
+
+            log_action(f"📅 Preparing to summarize {len(messages)} messages", user_id=lead_id)
 
             try:
                 formatted_text = "\n".join(
-                f"{msg.timestamp.strftime('%H:%M')} ({msg.sender}): {msg.content}"
-                for msg in messages
+                    f"{msg.timestamp.strftime('%H:%M')} ({msg.sender}): {msg.content}"
+                    for msg in messages
                 )
-                print("in this")              
+
                 response = requests.post("https://crmceo.com/ai/summarize", json={
                     "lead_id": lead_id,
                     "summary_date": summary_date,
@@ -295,16 +302,20 @@ def summarize_leads_for_date(lead_id: int, summary_date: str):
                         generated_by="gpt",
                         created_at=datetime.now()
                     ))
+                    log_action("✅ Summary saved to LeadComment", user_id=lead_id, action_type="summary_created")
                 else:
-                    print(f"❌ Failed for lead {lead_id}: Status {response.status_code}")
+                    log_action(f"❌ Summarization API failed with {response.status_code}", user_id=lead_id, level="error")
+
             except Exception as e:
-                print(f"❌ Request error for lead {lead_id}: {e}")
+                log_action("❌ Error during summarization API call", user_id=lead_id, level="error", exc_info=True)
 
             session.commit()
-            print(f"✅ Summarized lead {lead_id} for {summary_date}")
+            log_action(f"✅ Finalized summary for {summary_date}", user_id=lead_id)
+
         except Exception as e:
-            print("❌ Summarization batch failed:", e)
             session.rollback()
+            log_action("❌ Summarization task crashed", user_id=lead_id, level="error", exc_info=True)
+
         finally:
             session.close()
 # -----------------------------
@@ -329,30 +340,39 @@ from app.models.models import ReminderLog, Lead, Meeting
 from app.services.whatsapp_services import send_meeting_reminder_function
 from app.services.massenger_services import send_message
 
-@celery.task(name="send_whatsapp_reminder")
+celery.task(name="send_whatsapp_reminder")
 def send_whatsapp_reminder(reminder_id):
-    import logging
-    logger = logging.getLogger(__name__)
+    from datetime import datetime, timezone
+    import pytz
+
+    log_action(f"🚀 Reminder task triggered", user_id=reminder_id, actor_type="system", action_type="reminder")
 
     try:
         reminder = db.session.get(ReminderLog, reminder_id)
         if not reminder:
-            logger.warning(f"⚠️ Reminder {reminder_id} not found.")
+            log_action(f"⚠️ Reminder ID {reminder_id} not found", user_id=reminder_id, level="warning")
             return
 
         lead = db.session.get(Lead, reminder.lead_id)
         if not lead or not lead.sales_rep or not lead.sales_rep.phone_number:
             reminder.status = "failed"
             db.session.commit()
+            log_action(f"❌ Invalid lead or missing phone for reminder {reminder_id}", user_id=reminder.lead_id, level="error")
             return
 
-        meeting = db.session.query(Meeting).filter_by(lead_id=lead.id).order_by(Meeting.meeting_time_utc.desc()).first()
+        meeting = (
+            db.session.query(Meeting)
+            .filter_by(lead_id=lead.id)
+            .order_by(Meeting.meeting_time_utc.desc())
+            .first()
+        )
         if not meeting:
             reminder.status = "failed"
             db.session.commit()
+            log_action(f"❌ No meeting found for lead {lead.id}", user_id=lead.id, level="error")
             return
 
-        # ✅ helper to ensure meeting_time is aware
+        # Ensure timezone-aware datetime
         def make_aware(dt):
             return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
@@ -361,8 +381,6 @@ def send_whatsapp_reminder(reminder_id):
 
         minutes_left = int((meeting_time - now_utc).total_seconds() // 60)
         rep_tz = pytz.timezone(lead.sales_rep.timezone or "Asia/Karachi")
-
-        # ✅ SAFE conversion - no localize anymore
         local_meeting_time = meeting_time.astimezone(rep_tz)
         time_str = local_meeting_time.strftime("%I:%M %p")
         timezone_str = rep_tz.zone
@@ -376,26 +394,43 @@ def send_whatsapp_reminder(reminder_id):
             minutes_left=minutes_left
         )
 
-        if 'error' not in response_json:
+        if "error" not in response_json:
             reminder.status = "sent"
+            log_action(f"✅ Reminder sent to {lead.sales_rep.phone_number}", user_id=reminder.lead_id, action_type="reminder_sent")
         else:
             reminder.status = "failed"
             reminder.retry_count += 1
+            log_action(f"❌ Reminder failed to send: {response_json}", user_id=reminder.lead_id, level="warning")
 
         db.session.commit()
 
     except Exception as e:
         db.session.rollback()
-        logger.error(f"🔥 CRITICAL ERROR during reminder {reminder_id}: {str(e)}", exc_info=True)
-
+        log_action("🔥 Critical failure during reminder", user_id=reminder_id, level="error", exc_info=True)
 
 
 @celery.task(bind=True, max_retries=3)
 def async_send_message(self, message_id, psid, text, access_token, message_type, platform):
     try:
         send_message(message_id, psid, text, access_token, message_type, platform)
+
+        # Only log success if no exception occurs
+        log_action(
+            f"✅ Message sent [type={message_type}] via {platform} to PSID {psid}",
+            user_id=psid,
+            actor_type="system",
+            action_type="message_sent"
+        )
+
     except Exception as e:
-        print("❌ Celery async_send_message failed:", e)
+        log_action(
+            f"❌ async_send_message failed for PSID {psid} on platform {platform}",
+            user_id=psid,
+            actor_type="system",
+            action_type="send_failed",
+            level="error",
+            exc_info=True
+        )
         self.retry(exc=e, countdown=5)
 
 
@@ -416,14 +451,13 @@ def async_upload_and_send_file(message_id, file_name, file_content, content_type
             ContentType=content_type
         )
 
-        # ✅ Generate public URL
         file_url = f"https://{bucket_name}.s3.amazonaws.com/{s3_key}"
 
-        # ✅ Update message with actual file URL
+        # ✅ Update DB
         session = db.session
         message = session.query(LeadMessage).filter_by(id=message_id).first()
         if message:
-            message.text = file_url  # So frontend can render it
+            message.text = file_url
             session.commit()
 
         # ✅ Send message
@@ -436,12 +470,25 @@ def async_upload_and_send_file(message_id, file_name, file_content, content_type
             platform=platform
         )
 
-    except (BotoCoreError, NoCredentialsError, Exception) as e:
-        print(f"❌ S3 Upload/Send Failed: {e}")
+        log_action(
+            f"📎 File sent via {platform} to PSID {psid}: {file_name}",
+            user_id=psid,
+            actor_type="system",
+            action_type="file_sent"
+        )
 
-        # ❌ Mark message as failed
+    except (BotoCoreError, NoCredentialsError, Exception) as e:
         session = db.session
         message = session.query(LeadMessage).filter_by(id=message_id).first()
         if message:
             message.status = "failed"
             session.commit()
+
+        log_action(
+            f"❌ File upload/send failed for {file_name} to PSID {psid} via {platform}",
+            user_id=psid,
+            actor_type="system",
+            action_type="file_failed",
+            level="error",
+            exc_info=True
+        )

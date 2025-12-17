@@ -17,3 +17,21 @@ def safe_seed_data():
 
     db.session.commit()
 
+def ensure_admin_user():
+    try:
+        admin_exists = db.session.query(User).filter_by(is_admin=True).first()
+        if not admin_exists:
+            admin_user = User(
+                username="admin",
+                email="admin@example.com",
+                password=generate_password_hash("admin123"),
+                is_admin=True
+            )
+            db.session.add(admin_user)
+            db.session.commit()
+            print("✅ Admin user created with default credentials.")
+        else:
+            print("✅ Admin user already exists.")
+    finally:
+        db.session.close()
+

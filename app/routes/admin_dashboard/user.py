@@ -105,3 +105,26 @@ def manage_users():
         return render_template("admin/manage_user.html", users=users)
     finally:
         db.close()
+
+@admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def delete_user(user_id):
+    db = get_db()
+    try:
+        user = db.query(User).filter_by(id=user_id).first()
+        if not user:
+            flash("❌ User not found.", "danger")
+            return redirect(url_for("admin.manage_users"))
+
+        db.delete(user)
+        db.commit()
+        flash("✅ User deleted successfully.", "success")
+        return redirect(url_for("admin.manage_users"))
+
+    except Exception as e:
+        db.rollback()
+        flash(f"❌ Error deleting user: {str(e)}", "danger")
+        return redirect(url_for("admin.manage_users"))
+    finally:
+        db.close()
+    

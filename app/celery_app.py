@@ -1,7 +1,10 @@
 from celery import Celery
+from app.log_config import setup_logging
+setup_logging()
 from app import create_app
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
 celery = Celery("sales_crm", broker_url = os.getenv(

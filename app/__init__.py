@@ -10,6 +10,7 @@ from app.seed_data_company import safe_seed_data
 from app.config import Config
 import os
 from dotenv import load_dotenv
+from app.log_config import setup_logging
 
 # ✅ Global SocketIO instance
 socketio = SocketIO(cors_allowed_origins="*")
@@ -39,6 +40,7 @@ def create_app(config_class=Config):
     socketio.init_app(app)
     mail.init_app(app)
 
+    setup_logging()
     with app.app_context():
         
         # ✅ Register Blueprints
@@ -80,6 +82,8 @@ def create_app(config_class=Config):
                 print(f"🌱 Seeding initial data in {env}...")
                 safe_seed_data()
             else:
+                from app.seed_data_company import ensure_admin_user
+                ensure_admin_user()
                 print(f"✅ Data already exists. Skipping seed in {env}.")
 
         # ✅ Context Processors

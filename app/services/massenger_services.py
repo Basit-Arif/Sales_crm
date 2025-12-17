@@ -7,6 +7,7 @@ from app.models import db,local_now
 from app.models.models import LeadMessage
 from flask import current_app
 from app import socketio
+from app.log_config import log_action
 
 load_dotenv()
 
@@ -27,36 +28,34 @@ def get_user_name(psid: str, access_token: str) -> str | None:
         return None
     
 
-def get_instagram_username(access_token):
-    # Step 1: Get list of pages
-    pages_url = f"https://graph.facebook.com/v19.0/me/accounts?access_token={access_token}"
-    pages_response = requests.get(pages_url)
-    pages_data = pages_response.json()
+def get_instagram_username(instagram_id: str, access_token: str) -> str | None:
+    url = f"https://graph.facebook.com/v19.0/{instagram_id}?fields=username&access_token={access_token}"
+    response = requests.get(url)
+    data = response.json()
 
-    for page in pages_data.get('data', []):
-        page_id = page['id']
-        # Step 2: Get Instagram Business Account ID
-        ig_account_url = f"https://graph.facebook.com/v19.0/{page_id}?fields=instagram_business_account&access_token={access_token}"
-        ig_account_response = requests.get(ig_account_url)
-        ig_account_data = ig_account_response.json()
-
-        ig_business_account = ig_account_data.get('instagram_business_account')
-        if ig_business_account:
-            ig_user_id = ig_business_account['id']
-            # Step 3: Get Instagram Username
-            ig_user_url = f"https://graph.facebook.com/v19.0/{ig_user_id}?fields=username&access_token={access_token}"
-            ig_user_response = requests.get(ig_user_url)
-            ig_user_data = ig_user_response.json()
-            return ig_user_data.get('username')
-    return None
+    if "username" in data:
+        return data["username"]
     
-def get_lead_name(psid: str, platform: str, access_token: str) -> str | None:
+    log_action(
+        f"❌ Failed to fetch IG username: {data.get('error', {}).get('message', 'Unknown error')}",
+        level="error",
+        actor_type="system",
+        action_type="ig-username-fetch"
+    )
+    return None
+from typing import Optional
+
+def get_lead_name(psid: str, platform: str, access_token: str ,instagram_id:Optional[str]) -> str | None:
     if platform == "messenger":
+        log_action(f"🔍 Fetching Messenger user name for PSID: {psid}", actor_type="system", action_type="lead-name-fetch")
         return get_user_name(psid, access_token)
+
     elif platform == "instagram":
-        return get_instagram_username(access_token)
+        log_action(f"🔍 Fetching Instagram username using access token", actor_type="system", action_type="lead-name-fetch")
+        return get_instagram_username(instagram_id,access_token)
+
     else:
-        print("❌ Unknown platform for lead name fetch.")
+        log_action(f"❌ Unknown platform: {platform} while fetching lead name", level="error", actor_type="system", action_type="lead-name-fail")
         return None
 
 
